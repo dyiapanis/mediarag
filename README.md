@@ -1,45 +1,89 @@
 # MediaRAG
 
-Multimodal local asset memory for content creators — a Hermes agent-plugin
-package per the [agent-plugins.org](https://agent-plugins.org/) 1.0 standard.
+Multimodal local asset memory for content creators, packaged as a Hermes
+agent-plugin per the [agent-plugins.org](https://agent-plugins.org/) 1.0
+standard.
 
-Index your media (images, audio, video soundtracks, notes, subtitles) into a
-local SQLite corpus and search it by meaning with any MCP-capable agent.
+It indexes your media (images, audio, video soundtracks, notes, subtitles)
+into a local SQLite corpus, and you search it by meaning from any MCP-capable
+agent. "Where is the clip where I talked about the C6 landing" is the kind of
+question it answers.
 
-- **In-gateway**: registers native tools (`search`, `add_source`, `ingest_dir`,
-  `add_note`, `status`) once — a single gateway serves all agents, the embedding
+How it runs:
+
+- In-gateway: native tools (`search`, `add_source`, `ingest_dir`, `add_note`,
+  `status`) register once, so one gateway serves all agents and the embedding
   model loads once.
-- **Cross-client**: `mcp.json` declares an MCP server entry, so Claude Desktop,
-  Cursor and other Agent-Plugins-compatible clients load the same package.
-- **Local-only**: no cloud services; the corpus lives at `<root>/.corpus/store.db`.
+- Cross-client: `mcp.json` declares a stdio MCP server, so Claude Desktop,
+  Cursor, and other Agent Plugins compatible clients load the same package.
+- Local-only: no cloud services. The corpus lives at `<root>/.corpus/store.db`.
 
-Status: v1 agent-plugin (python). Text/image/audio towers parity-locked at
-12/12 golden vectors (cos 1.000000). See pCloud `MediaRAG-scope.md` for the
-build contract.
+The text, image, and audio embedders are parity-locked against the reference
+models: 12/12 golden vectors at cosine 1.000000.
 
-Fleet-corpus edition: **hybrid retrieval** (semantic + FTS5/BM25 keyword lane,
-RRF-fused), **doc ingest** (pdf via `pdftotext`; docx/odt/epub/rst/html/csv/rtf
-via `pandoc`), **per-agent domain stamps** (search param `agent`), and
-**incremental re-indexing** (unchanged files skip by mtime+size fingerprint).
-System tools expected when their lane is used: `ffmpeg` (audio), `pandoc`
-(documents), `pdftotext` (pdf). First use downloads the EG2 q4 ONNX weights
-(~482MB) to the HF cache. Domain stamps are opt-in per deployment:
-`MEDIARAG_DOMAIN_STAMPS` = JSON list (or path to a JSON file) of
-`["<path prefix>", "<label>"]` pairs; unmatched paths stay in the shared lane.
+## Features
+
+- Hybrid retrieval: semantic vectors plus an FTS5/BM25 keyword lane, fused with
+  reciprocal rank fusion. Exact-string lookups and meaning searches both work.
+- Document ingest: pdf through `pdftotext`, and docx/odt/epub/rst/html/csv/rtf
+  through `pandoc`.
+- Incremental re-indexing: unchanged files are skipped on an mtime+size
+  fingerprint.
+- Source adapters: external collections through `sources.d` executables (see
+  below).
+- Domain stamps (opt-in): the `agent` search parameter restricts results to one
+  labeled lane of sources. Configure with `MEDIARAG_DOMAIN_STAMPS`, a JSON list
+  (or a path to a JSON file) of `["<path prefix>", "<label>"]` pairs. Paths
+  that match nothing stay in the shared lane.
+
+## Install
+
+Python dependencies: `pip install -r requirements.txt`. The system tools are
+only needed for the lanes that use them: `ffmpeg` for audio, `pandoc` for
+documents, `pdftotext` for pdf.
+
+On first use the EG2 q4 ONNX weights (~482MB) download into the Hugging Face
+cache. After that everything runs offline (`HF_HUB_OFFLINE=1`).
+
+To run it as a Hermes plugin, point the plugin loader at this directory (or at
+the agent plugin catalog entry). The manifests (`mcp.json`, `plugin.yaml`,
+`plugin.json`) describe both the stdio MCP server (`scripts/mcp_server.py`,
+spawned by the client) and the in-gateway native tools. Neither mode opens a
+network listener.
+
+## Configuration
+
+Everything is optional and set through the environment:
+
+- `MEDIARAG_ROOT` — corpus root (default: the host profile's data dir)
+- `MEDIARAG_PYLIBS2` — extra site-packages path for the engine dependencies
+- `MEDIARAG_DOMAIN_STAMPS` — domain stamps (see Features)
+- `RAINDROP_API_TOKEN`, `PCLOUD_MOUNT`, `OBSIDIAN_VAULT` — adapter inputs
 
 ## Adapters
 
-`add_source` accepts `http(s)://` URLs (curl, ≤256MB) and source-scheme URIs
-(`<scheme>://...`) handled by adapters. Four ship bundled (all optional-lane
-system deps):
+`add_source` accepts `http(s)://` URLs (fetched with curl, capped at 256MB)
+and source-scheme URIs (`<scheme>://...`) handled by adapters. Four ship in the
+box:
 
-- `rclone://remote:path` — any [rclone](https://rclone.org/) remote; files copy
-  into a persistent cache (`~/.cache/mediarag/rclone`) then index natively
-- `pcloud://` — walks a locally-mounted pCloud drive (`PCLOUD_MOUNT` env)
-- `obsidian://` — Obsidian vault; skips `.obsidian/`, `.trash/`, `.git/`
-- `raindrop://` — Raindrop.io bookmarks via REST (`RAINDROP_API_TOKEN` env)
+- `rclone://remote:path` — any [rclone](https://rclone.org/) remote. Files copy
+  into a persistent cache at `~/.cache/mediarag/rclone` and index from there.
+- `pcloud://` — walks a locally mounted pCloud drive (`PCLOUD_MOUNT` env).
+- `obsidian://` — an Obsidian vault; skips `.obsidian/`, `.trash/`, `.git/`.
+- `raindrop://` — Raindrop.io bookmarks through the REST API
+  (`RAINDROP_API_TOKEN` env).
 
-Custom adapters: drop an executable in `sources.d/<scheme>` that accepts
-`fetch <rest>` and emits JSON lines `{"uri","title","text"}` or
-`{"uri","path"}` on stdout. `status` lists discovered adapters; unknown
-schemes fail with the available list.
+To write your own adapter, drop an executable at `sources.d/<scheme>` that
+accepts `fetch <rest>` and prints one JSON object per line, either
+`{"uri","title","text"}` or `{"uri","path"}`. `status` reports the adapters it
+found; an unknown scheme fails with the list of what is available.
+
+## Development
+
+Tests: `pytest tests/`. The fixtures under `tests/fixtures/` are synthetic and
+deterministic, and nothing contacts the network. `tests/bench_engine.py` and
+`scripts/bench.sh` are the local benchmark harness.
+
+## License
+
+MIT. For security reports, see `SECURITY.md`.
