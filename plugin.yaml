@@ -1,0 +1,16 @@
+name: mediarag
+version: 0.1.0
+description: "Multimodal local asset memory for content creators — index media, notes, subtitles and audio locally, search by meaning from any MCP-capable agent."
+author: D Yiapanis
+license: MIT
+kind: standalone
+provides_tools:
+  - mediarag_search
+  - mediarag_add_note
+  - mediarag_ingest_dir
+  - mediarag_add_source
+  - mediarag_status
+provides_hooks: []
+provides_middleware: []
+requires_env: []
+requires_hermes: ">=0.21.4"
