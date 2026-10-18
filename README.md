@@ -26,3 +26,20 @@ System tools expected when their lane is used: `ffmpeg` (audio), `pandoc`
 (~482MB) to the HF cache. Domain stamps are opt-in per deployment:
 `MEDIARAG_DOMAIN_STAMPS` = JSON list (or path to a JSON file) of
 `["<path prefix>", "<label>"]` pairs; unmatched paths stay in the shared lane.
+
+## Adapters
+
+`add_source` accepts `http(s)://` URLs (curl, ≤256MB) and source-scheme URIs
+(`<scheme>://...`) handled by adapters. Four ship bundled (all optional-lane
+system deps):
+
+- `rclone://remote:path` — any [rclone](https://rclone.org/) remote; files copy
+  into a persistent cache (`~/.cache/mediarag/rclone`) then index natively
+- `pcloud://` — walks a locally-mounted pCloud drive (`PCLOUD_MOUNT` env)
+- `obsidian://` — Obsidian vault; skips `.obsidian/`, `.trash/`, `.git/`
+- `raindrop://` — Raindrop.io bookmarks via REST (`RAINDROP_API_TOKEN` env)
+
+Custom adapters: drop an executable in `sources.d/<scheme>` that accepts
+`fetch <rest>` and emits JSON lines `{"uri","title","text"}` or
+`{"uri","path"}` on stdout. `status` lists discovered adapters; unknown
+schemes fail with the available list.
