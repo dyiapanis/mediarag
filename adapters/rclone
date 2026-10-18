@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""MediaRAG source adapter: rclone://<remote>:<path> — ANY rclone-configured
+backend (Google Drive, OneDrive, S3, WebDAV, Dropbox, SFTP, …) in one adapter.
+
+Mechanism: `rclone copy` the subtree into a persistent local cache, then emit
+{"uri", "path"} items for indexable files (the server's native indexer decodes
+and embeds them itself). The cache is persistent (default ~/.cache/mediarag/
+rclone/<remote>/<path>) so thumbnails and re-indexing keep working afterwards.
+
+Env: RCLONE_ADAPTER_CACHE (default ~/.cache/mediarag/rclone). rclone credentials
+come from the server's rclone environment (config file / env), same as any
+rclone invocation.
+"""
+import json
+import os
+import subprocess
+import sys
+
+INDEXABLE = {".md", ".txt", ".srt", ".vtt", ".png", ".jpg", ".jpeg", ".webp",
+             ".wav", ".mp3", ".m4a", ".ogg", ".flac", ".aac"}
+SKIP_DIRS = {".obsidian", ".trash", ".git"}
+
+
+def main():
+    if len(sys.argv) != 3 or sys.argv[1] != "fetch":
+        print("usage: rclone fetch \"<remote>:<path>\"  (e.g. rclone://gdrive:/notes)", file=sys.stderr)
+        return 2
+    target = sys.argv[2]
+    if ":" not in target:
+        print('target must be "<remote>:<path>", e.g. "gdrive:/notes"', file=sys.stderr)
+        return 1
+    remote, _, remote_path = target.partition(":")
+    remote_path = "/" + remote_path.lstrip("/")
+    cache = os.environ.get("RCLONE_ADAPTER_CACHE",
+                           os.path.expanduser("~/.cache/mediarag/rclone"))
+    dest = os.path.join(cache, remote, remote_path.lstrip("/"))
+    os.makedirs(dest, exist_ok=True)
+    # rclone copy: parallel, respects remotes' own config/env; exits non-zero on
+    # partial failure with a summary on stderr.
+    cp = subprocess.run(["rclone", "copy", f"{remote}:{remote_path}", dest,
+                         "--transfers", "8", "--checkers", "8"],
+                        capture_output=True, text=True)
+    for line in cp.stderr.strip().splitlines()[-3:]:
+        print(f"rclone: {line}", file=sys.stderr)
+    if cp.returncode != 0:
+        print(f"rclone copy failed (exit {cp.returncode})", file=sys.stderr)
+        return 1
+    total = 0
+    for dirpath, dirnames, filenames in os.walk(dest):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS]
+        for fn in sorted(filenames):
+            ext = os.path.splitext(fn)[1].lower()
+            if fn.startswith(".") or ext not in INDEXABLE:
+                continue
+            p = os.path.join(dirpath, fn)
+            rel = os.path.relpath(p, os.path.join(cache, remote))
+            print(json.dumps({"uri": f"rclone://{remote}/{rel}", "path": p},
+                             ensure_ascii=False))
+            total += 1
+    print(f"emitted {total} indexable files from {remote}:{remote_path} (cache {dest})",
+          file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

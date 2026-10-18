@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+"""MediaRAG source adapter: obsidian://<vault-path> — an Obsidian vault.
+
+Emits {"uri", "path"} items for indexable files under the vault, skipping
+Obsidian's own config/noise (.obsidian, .trash, .DS_Store, hidden dirs, .tmp).
+Vault resolution order for the arg (the part after obsidian://):
+  1. absolute or ~-expanded path as given
+  2. $OBSIDIAN_VAULT + arg
+Env: OBSIDIAN_VAULT (optional default vault). Indexable extensions = the server's.
+"""
+import json
+import os
+import sys
+
+INDEXABLE = {".md", ".txt", ".srt", ".vtt", ".png", ".jpg", ".jpeg", ".webp",
+             ".wav", ".mp3", ".m4a", ".ogg", ".flac", ".aac"}
+SKIP_DIRS = {".obsidian", ".trash", ".git", ".smart-env", ".DS_Store"}
+SKIP_EXT = {".tmp", ".bak", ".partial"}
+
+
+def main():
+    if len(sys.argv) != 3 or sys.argv[1] != "fetch":
+        print("usage: obsidian fetch <vault-path>  (e.g. obsidian://~/notes/vault)", file=sys.stderr)
+        return 2
+    sub = sys.argv[2]
+    candidates = []
+    if sub.startswith("/"):
+        candidates.append(sub)
+    if sub.startswith("~"):
+        candidates.append(os.path.expanduser(sub))
+    default = os.environ.get("OBSIDIAN_VAULT", "")
+    if default:
+        candidates.append(os.path.join(os.path.expanduser(default), sub.lstrip("/")))
+    root = next((c for c in candidates if os.path.isdir(c)), None)
+    if root is None:
+        print(f"vault not found: tried {candidates} (set OBSIDIAN_VAULT or pass an absolute path)",
+              file=sys.stderr)
+        return 1
+    total = 0
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS]
+        for fn in sorted(filenames):
+            base, ext = os.path.splitext(fn)
+            if fn.startswith(".") or fn.endswith(".tmp") or ext.lower() in SKIP_EXT:
+                continue
+            if ext.lower() not in INDEXABLE:
+                continue
+            p = os.path.join(dirpath, fn)
+            rel = os.path.relpath(p, root)
+            print(json.dumps({"uri": f"obsidian://{rel}", "path": p}, ensure_ascii=False))
+            total += 1
+    print(f"emitted {total} indexable files from vault {root}", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,6 @@
+# MediaRAG engine deps (pinned venv at ~/.venvs/mediarag — see plugin entry).
+onnxruntime==1.29.0
+numpy>=2.0
+pillow>=11.0
+tokenizers>=0.20
+transformers==5.19.0

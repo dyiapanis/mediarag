@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+"""MediaRAG source adapter: pcloud://<path-in-drive> — pCloud assets via the
+rclone FUSE mount (or any local mount point).
+
+Env: PCLOUD_MOUNT (default: "~/pCloud Drive"). Item shape: {"uri", "path"} —
+the indexer decodes/embeds real files itself. Indexable extensions are the
+server's (md/txt/srt/vtt/images/audio).
+"""
+import json
+import os
+import sys
+
+INDEXABLE = {".md", ".txt", ".srt", ".vtt", ".png", ".jpg", ".jpeg", ".webp",
+             ".wav", ".mp3", ".m4a", ".ogg", ".flac", ".aac"}
+
+
+def main():
+    if len(sys.argv) != 3 or sys.argv[1] != "fetch":
+        print("usage: pcloud fetch <path-inside-drive>  (e.g. pcloud://Shared/wiki)", file=sys.stderr)
+        return 2
+    mount = os.environ.get("PCLOUD_MOUNT", "~/pCloud Drive")
+    mount = os.path.expanduser(mount)
+    sub = sys.argv[2]
+    if sub.startswith("/"):  # accept both "Shard/x" and "/Shared/x"
+        sub = sub.lstrip("/")
+    root = os.path.join(mount, sub)
+    if not os.path.isdir(root):
+        print(f"not a directory: {root} (set PCLOUD_MOUNT if your mount differs)", file=sys.stderr)
+        return 1
+    total = 0
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d != ".corpus"]
+        for fn in sorted(filenames):
+            if fn.startswith("."):
+                continue
+            ext = os.path.splitext(fn)[1].lower()
+            if ext not in INDEXABLE:
+                continue
+            p = os.path.join(dirpath, fn)
+            print(json.dumps({"uri": f"pcloud://{os.path.relpath(p, mount)}", "path": p},
+                             ensure_ascii=False))
+            total += 1
+    print(f"emitted {total} indexable files under {sub}", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
