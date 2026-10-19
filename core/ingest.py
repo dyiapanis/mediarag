@@ -95,7 +95,11 @@ def doc_text(path: str) -> str:
 
 
 def text_chunks(s: str) -> list[tuple[float, float, str]]:
-    """Paragraph blocks (~1500 chars) with real char offsets [start, end) in s."""
+    """Paragraph blocks (~1500 chars) with real char offsets [start, end) in s.
+
+    A single paragraph longer than CHUNK_CHARS is split on whitespace
+    boundaries — otherwise a no-paragraph-break file (csv/plain dumps)
+    yields one giant chunk and the embedder sees an unbounded sequence."""
     out: list[tuple[float, float, str]] = []
     buf, buf_start, buf_end = "", None, 0
     pos = 0
@@ -105,6 +109,20 @@ def text_chunks(s: str) -> list[tuple[float, float, str]]:
             pos = start  # paragraphs are non-overlapping in order
         t = p.strip()
         if not t:
+            continue
+        if len(t) > CHUNK_CHARS:  # split the oversized paragraph itself
+            off = start if start >= 0 else pos
+            words = t.split(" ")
+            sub = ""
+            sub_start = off
+            for w in words:
+                if sub and len(sub) + len(w) + 1 > CHUNK_CHARS:
+                    out.append((float(sub_start), float(sub_start + len(sub)), sub))
+                    sub_start = sub_start + len(sub) + 1  # skip the joining space
+                    sub = ""
+                sub = w if not sub else sub + " " + w
+            if sub:
+                out.append((float(sub_start), float(sub_start + len(sub)), sub))
             continue
         if buf and len(buf) + len(t) > CHUNK_CHARS:
             assert buf_start is not None
