@@ -31,10 +31,6 @@ models: 12/12 golden vectors at cosine 1.000000.
   fingerprint.
 - Source adapters: external collections through `sources.d` executables (see
   below).
-- Domain stamps (opt-in): the `agent` search parameter restricts results to one
-  labeled lane of sources. Configure with `MEDIARAG_DOMAIN_STAMPS`, a JSON list
-  (or a path to a JSON file) of `["<path prefix>", "<label>"]` pairs. Paths
-  that match nothing stay in the shared lane.
 
 ## Install
 
@@ -57,7 +53,6 @@ Everything is optional and set through the environment:
 
 - `MEDIARAG_ROOT` — corpus root (default: the host profile's data dir)
 - `MEDIARAG_PYLIBS2` — extra site-packages path for the engine dependencies
-- `MEDIARAG_DOMAIN_STAMPS` — domain stamps (see Features)
 - `RAINDROP_API_TOKEN`, `PCLOUD_MOUNT`, `OBSIDIAN_VAULT` — adapter inputs
 
 ## Adapters

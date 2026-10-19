@@ -47,7 +47,6 @@ def _table():
          {"query": {"type": "string", "description": "natural-language query"},
           "k": {"type": "integer", "default": 5},
           "kind": {"type": "string", "enum": ["text", "image", "audio"]},
-          "agent": {"type": "string", "description": "restrict to one domain-stamped lane (see MEDIARAG_DOMAIN_STAMPS); empty = all"},
           "include_thumbnails": {"type": "boolean", "default": True},
           "root": {"type": "string", "description": "corpus root (default the profile corpus)"}},
          ["query"]),

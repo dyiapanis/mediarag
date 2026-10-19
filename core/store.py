@@ -34,13 +34,13 @@ CREATE TABLE IF NOT EXISTS fingerprints(
 
 
 def _migrate(c: sqlite3.Connection) -> None:
-    """agent column (domain stamps, rag parity). Idempotent."""
-    try:
-        c.execute("ALTER TABLE assets ADD COLUMN agent TEXT NOT NULL DEFAULT ''")
+    """Drop the legacy `agent` lane-stamp column if present (removed 2026-10-19:
+    semantic search does the heavy lifting — no path-prefix tagging). Idempotent."""
+    cols = [r[1] for r in c.execute("PRAGMA table_info(assets)")]
+    if "agent" in cols:
+        c.execute("DROP INDEX IF EXISTS assets_agent")  # index must go before the column
+        c.execute("ALTER TABLE assets DROP COLUMN agent")
         c.commit()
-    except sqlite3.OperationalError:
-        pass  # column exists
-    c.execute("CREATE INDEX IF NOT EXISTS assets_agent ON assets(agent)")
 
 
 def db_path(root: str) -> str:
@@ -71,10 +71,10 @@ def upsert_uri(c: sqlite3.Connection, uri: str, rows: list[dict], fp: str | None
         c.execute("DELETE FROM fingerprints WHERE uri = ?", (uri,))
     try:
         c.executemany(
-            "INSERT OR REPLACE INTO assets(uri,kind,span_start,span_end,snippet,thumb,vec,agent) VALUES(?,?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO assets(uri,kind,span_start,span_end,snippet,thumb,vec) VALUES(?,?,?,?,?,?,?)",
             [
                 (r["uri"], r["kind"], r["span_start"], r["span_end"], r["snippet"][:2000],
-                 r.get("thumb"), enc(r["vec"]), r.get("agent", "")) for r in rows
+                 r.get("thumb"), enc(r["vec"])) for r in rows
             ],
         )
         c.executemany(
@@ -116,7 +116,7 @@ def _sanitize_fts_query(query: str) -> str:
 
 
 def keyword_search(c: sqlite3.Connection, query: str, k: int = 5,
-                   kind: str | None = None, agent: str | None = None) -> list[dict]:
+                   kind: str | None = None) -> list[dict]:
     """FTS5 BM25 hits, same result shape as search(). Empty query → []."""
     if not query.strip():
         return []
@@ -125,9 +125,6 @@ def keyword_search(c: sqlite3.Connection, query: str, k: int = 5,
     if kind:
         clauses.append("kind = ?")
         subparams.append(kind)
-    if agent:
-        clauses.append("agent = ?")
-        subparams.append(agent)
     if clauses:
         sub += " WHERE " + " AND ".join(clauses)
     fts_q = _sanitize_fts_query(query)
@@ -177,15 +174,12 @@ def rrf_blend(semantic: list[dict], keyword: list[dict], k: int = 5,
 
 
 def search(c: sqlite3.Connection, qvec: np.ndarray, k: int = 5, kind: str | None = None,
-           include_thumbnails: bool = True, agent: str | None = None) -> list[dict]:
+           include_thumbnails: bool = True) -> list[dict]:
     where = []
     params: list = []
     if kind:
         where.append("kind = ?")
         params.append(kind)
-    if agent:
-        where.append("agent = ?")
-        params.append(agent)
     sql = "SELECT uri,kind,span_start,span_end,snippet,vec,thumb FROM assets" \
         + (" WHERE " + " AND ".join(where) if where else "")
     rows = c.execute(sql, tuple(params)).fetchall()

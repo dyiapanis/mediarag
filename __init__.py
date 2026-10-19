@@ -107,7 +107,6 @@ def register(ctx) -> None:
             "k": {"type": "integer", "default": 5},
             "kind": {"type": "string", "enum": ["text", "image", "audio"]},
             "include_thumbnails": {"type": "boolean", "default": True},
-            "agent": {"type": "string", "description": "restrict to a domain-stamped source lane (see MEDIARAG_DOMAIN_STAMPS); omit for the whole corpus"},
             "root": {"type": "string", "description": "corpus root (default the profile corpus)"},
         },
         ["query"],
