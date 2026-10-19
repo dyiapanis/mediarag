@@ -34,6 +34,25 @@ def check(name: str, cond: bool, detail: str = ""):
 
 
 def main() -> int:
+    # OOM regression (2026-10-19 fleet incident): a no-paragraph-break file
+    # (81KB calibre csv) produced ONE giant chunk → unbounded token sequence →
+    # 12GB attention blowup. Both layers must hold: chunker splits oversized
+    # paragraphs; engine caps tokens at MAX_TOK.
+    from core import engine  # numpy-only usage; no model load needed for the cap
+    giant = "word " * 20000  # 100KB single paragraph, no \n\n
+    chunks = ingest.text_chunks(giant)
+    check("oversized paragraph splits into many chunks", len(chunks) > 10, f"{len(chunks)} chunks")
+    check("every chunk within chunk budget", all(len(c[2]) <= ingest.CHUNK_CHARS + 1200 for c in chunks),
+          f"max len {max(len(c[2]) for c in chunks)}")
+    joined = " ".join(c[2] for c in chunks)
+    check("chunks reconstruct the text losslessly", joined == giant.strip(), f"{len(joined)} vs {len(giant.strip())}")
+    feeds = {"input_ids": np.arange(50000).reshape(1, -1), "attention_mask": np.ones((1, 50000))}
+    capped = engine._cap_tokens(feeds)
+    check("token cap slices to MAX_TOK", capped["input_ids"].shape == (1, engine.MAX_TOK)
+          and capped["attention_mask"].shape == (1, engine.MAX_TOK), str(capped["input_ids"].shape))
+    small = engine._cap_tokens({"input_ids": np.zeros((1, 5))})
+    check("token cap leaves short inputs alone", small["input_ids"].shape == (1, 5), str(small["input_ids"].shape))
+
     tmp = tempfile.mkdtemp(prefix="mrtest-")
     try:
         # --- D1: text chunk spans are real char offsets, distinct per block ---

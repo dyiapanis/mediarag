@@ -77,6 +77,19 @@ def _aud() -> ort.InferenceSession:
 Z = np.zeros((0, 512), np.float32)
 
 
+MAX_TOK = 1024  # ponytail: EG2 trunk is quadratic in sequence length — an unbounded
+# doc chunk (e.g. one 80KB paragraph) OOMs the host; 1024 tokens ≈ 4KB text, plenty for retrieval.
+
+
+def _cap_tokens(feeds: dict) -> dict:
+    """Slice input_ids/attention_mask to MAX_TOK (trust-boundary guard: tool inputs
+    like add_note/adapter text are unbounded; the trunk is not)."""
+    for k in ("input_ids", "attention_mask"):
+        if k in feeds and feeds[k].shape[-1] > MAX_TOK:
+            feeds[k] = feeds[k][..., :MAX_TOK]
+    return feeds
+
+
 def _finish(feeds: dict) -> np.ndarray:
     v = np.asarray(_trunk().run(None, feeds)[1], dtype=np.float32).reshape(-1)  # [1] = sentence_embedding
     return v / np.linalg.norm(v)
@@ -85,9 +98,9 @@ def _finish(feeds: dict) -> np.ndarray:
 def embed_query(q: str) -> np.ndarray:
     q = (QUERY_PREFIX + q.strip()).strip()
     p = _processor()(text=[q], return_tensors="np")
-    return _finish({"input_ids": p["input_ids"].astype(np.int64),
+    return _finish(_cap_tokens({"input_ids": p["input_ids"].astype(np.int64),
                     "attention_mask": p["attention_mask"].astype(np.int64),
-                    "image_features": Z, "video_features": Z, "audio_features": Z})
+                    "image_features": Z, "video_features": Z, "audio_features": Z}))
 
 
 def embed_doc(raw: str) -> np.ndarray:
@@ -95,9 +108,9 @@ def embed_doc(raw: str) -> np.ndarray:
     if raw == DOC_PREFIX.strip():
         raise ValueError("empty text chunk")
     p = _processor()(text=[raw], return_tensors="np")
-    return _finish({"input_ids": p["input_ids"].astype(np.int64),
+    return _finish(_cap_tokens({"input_ids": p["input_ids"].astype(np.int64),
                     "attention_mask": p["attention_mask"].astype(np.int64),
-                    "image_features": Z, "video_features": Z, "audio_features": Z})
+                    "image_features": Z, "video_features": Z, "audio_features": Z}))
 
 
 def embed_plain(raw: str) -> np.ndarray:
@@ -106,9 +119,9 @@ def embed_plain(raw: str) -> np.ndarray:
     if not raw:
         raise ValueError("empty text chunk")
     p = _processor()(text=[raw], return_tensors="np")
-    return _finish({"input_ids": p["input_ids"].astype(np.int64),
+    return _finish(_cap_tokens({"input_ids": p["input_ids"].astype(np.int64),
                     "attention_mask": p["attention_mask"].astype(np.int64),
-                    "image_features": Z, "video_features": Z, "audio_features": Z})
+                    "image_features": Z, "video_features": Z, "audio_features": Z}))
 
 
 def embed_image(path: str) -> np.ndarray:
