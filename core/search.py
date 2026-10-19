@@ -8,18 +8,16 @@ from .engine import embed_query
 
 
 def search(root: str, query: str, k: int = 5, kind: str | None = None,
-           include_thumbnails: bool = True, agent: str | None = None) -> list[dict]:
+           include_thumbnails: bool = True) -> list[dict]:
     """Hybrid: semantic (EG2 cosine) + keyword (FTS5 BM25) fused by RRF.
 
-    agent (optional) restricts to one domain-stamped source lane
-    (see MEDIARAG_DOMAIN_STAMPS) — None/'' spans the whole corpus.
     """
     qvec = embed_query(query)
     c = store.connect(root)
     try:
         semantic = store.search(c, qvec, k=max(k, 10), kind=kind,
-                                include_thumbnails=include_thumbnails, agent=agent)
-        keyword = store.keyword_search(c, query, k=max(k, 10), kind=kind, agent=agent)
+                                include_thumbnails=include_thumbnails)
+        keyword = store.keyword_search(c, query, k=max(k, 10), kind=kind)
         blended = store.rrf_blend(semantic, keyword, k=k)
         # semantic-only corpora (no fts rows, e.g. legacy stores) fall back cleanly
         return blended if blended else semantic

@@ -17,9 +17,9 @@ def _root(root: str | None) -> str:
 
 def tool_search(query: str, k: int = 5, root: str | None = None,
                 include_thumbnails: bool = True, kind: str | None = None,
-                agent: str | None = None, **_x) -> dict:
+                **_x) -> dict:
     return {"results": se.search(_root(root), query, k=k, kind=kind,
-                                 include_thumbnails=include_thumbnails, agent=agent)}
+                                 include_thumbnails=include_thumbnails)}
 
 
 def tool_ingest_dir(path: str, root: str | None = None, **_x) -> dict:

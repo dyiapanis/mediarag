@@ -235,34 +235,6 @@ def cache_dir() -> str:
     return d
 
 
-# Domain stamps (path prefix → lane label). Empty by default for public installs;
-# deployments override via MEDIARAG_DOMAIN_STAMPS — JSON list of ["<path prefix>", "<label>"],
-# JSON string or path to a JSON file (example: [["/Users/me/docs/finance","finance"]]).
-_AGENT_STAMPS: tuple = ()
-
-
-def _load_stamps() -> tuple:
-    raw = os.environ.get("MEDIARAG_DOMAIN_STAMPS", "")
-    if not raw:
-        return ()
-    import json
-    if os.path.isfile(raw):
-        raw = open(raw).read()
-    try:
-        return tuple(tuple(x) for x in json.loads(raw))
-    except Exception:
-        return ()
-
-
-def agent_of(path: str) -> str:
-    stamps = _AGENT_STAMPS or _load_stamps()
-    for prefix, agent in stamps:
-        p = os.path.expanduser(prefix)
-        if path.startswith(p + os.sep) or path == p:
-            return agent
-    return ""
-
-
 def _fingerprint(path: str) -> str:
     """mtime+size signature for incremental skip (no content reads)."""
     try:
@@ -359,9 +331,6 @@ def index_file(c, path: str, incremental: bool = True) -> tuple[int, list[dict]]
     label = f"{os.path.basename(path)} — {os.path.basename(os.path.dirname(path))}"
     rows.append({"uri": uri, "kind": label_rows_kind, "span_start": -1.0, "span_end": -1.0,
                  "snippet": label, "vec": embed_doc(label), "thumb": None})
-    agent = agent_of(uri)
-    for r in rows:
-        r["agent"] = agent
     store.upsert_uri(c, uri, rows, fp=_fingerprint(path))
     return len(rows), []
 
