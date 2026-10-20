@@ -21,7 +21,23 @@ _parent = os.path.dirname(_PLUGIN_DIR)
 if _parent not in sys.path:
     sys.path.insert(0, _parent)  # lets core.cli / tests import the package standalone
 
-TOOL_ROOT = os.environ.get("MEDIARAG_ROOT") or os.path.expanduser("~/.mediarag")
+def _config_root() -> str:
+    """Corpus root from mediarag-config.yaml in the plugin dir (named config, rag-config.yaml pattern).
+    # ponytail: flat `root:` line parse — no yaml dependency on the stdio spawn path;
+    # switch to yaml.safe_load if the config ever grows beyond one key.
+    """
+    path = os.path.join(_PLUGIN_DIR, "mediarag-config.yaml")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                if line.strip().startswith("root:"):
+                    return line.split(":", 1)[1].strip().strip("'\"")
+    except OSError:
+        pass
+    return ""
+
+
+TOOL_ROOT = _config_root() or os.environ.get("MEDIARAG_ROOT") or os.path.expanduser("~/.mediarag")
 
 PYVER = f"python{sys.version_info.major}.{sys.version_info.minor}"
 PIN_SITE = os.path.expanduser(f"~/.venvs/mediarag/lib/{PYVER}/site-packages")
