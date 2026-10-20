@@ -1,0 +1,4 @@
+# MediaRAG corpus configuration.
+# Copy to mediarag-config.yaml next to the plugin __init__.py.
+# Precedence: mediarag-config.yaml `root:` > MEDIARAG_ROOT env > default ~/.mediarag
+root: ~/.mediarag

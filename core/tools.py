@@ -8,7 +8,29 @@ from . import ingest as ing
 from . import store
 from . import search as se
 
-DEFAULT_ROOT = os.path.expanduser("~/.mediarag")
+_PKG_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _config_root() -> str:
+    """Corpus root from mediarag-config.yaml in the plugin/package dir.
+
+    Same precedence as the plugin __init__'s TOOL_ROOT (config > MEDIARAG_ROOT env >
+    default) so the native lane (explicit root=) and every defaulting caller —
+    the stdio table, direct core use — resolve identically.
+    # ponytail: flat `root:` line parse — no yaml dep; switch if the config grows keys.
+    """
+    path = os.path.join(_PKG_DIR, "mediarag-config.yaml")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                if line.strip().startswith("root:"):
+                    return line.split(":", 1)[1].strip().strip("'\"")
+    except OSError:
+        pass
+    return ""
+
+
+DEFAULT_ROOT = _config_root() or os.environ.get("MEDIARAG_ROOT") or os.path.expanduser("~/.mediarag")
 
 
 def _root(root: str | None) -> str:

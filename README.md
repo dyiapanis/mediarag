@@ -51,6 +51,7 @@ network listener.
 
 Everything is optional and set through the environment:
 
+- `mediarag-config.yaml` — named corpus config in the plugin dir (`root:` key); wins over env and the default (see `mediarag-config.example.yaml`)
 - `MEDIARAG_ROOT` — corpus root (default: the host profile's data dir)
 - `MEDIARAG_PYLIBS2` — extra site-packages path for the engine dependencies
 - `RAINDROP_API_TOKEN`, `PCLOUD_MOUNT`, `OBSIDIAN_VAULT` — adapter inputs
