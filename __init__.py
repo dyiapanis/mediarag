@@ -4,11 +4,10 @@ register(ctx) is the real loader contract: ctx.register_tool(name, toolset,
 schema={"type":"object","parameters":…}, handler, description). Handlers
 absorb dispatch kwargs themselves (**_x — Hermes passes task_id + extras).
 
-Env contract: the engine needs onnxruntime/numpy/PIL/tokenizers (pin venv at
-~/.venvs/mediarag per requirements.txt, or any hermes install-environment
-venv) plus transformers 5.19 from ~/pylibs2, which must shadow older venv
-copies. register() wires those paths and refuses to register tools when the
-deps are missing; the model snapshot is loaded offline (HF_HUB_OFFLINE=1).
+Env contract: register() checks that onnxruntime, numpy, and transformers
+import, and refuses to register tools when they do not. Install them with
+`pip install -r requirements.txt`. The model snapshot is loaded from the
+Hugging Face cache and is not downloaded on startup.
 """
 from __future__ import annotations
 
@@ -44,9 +43,8 @@ PIN_SITE = os.path.expanduser(f"~/.venvs/mediarag/lib/{PYVER}/site-packages")
 PYLIBS2 = os.path.expanduser("~/pylibs2")
 
 BOOTSTRAP_HINT = (
-    "MediaRAG engine deps missing — create the pin venv: "
-    "python3 -m venv ~/.venvs/mediarag && ~/.venvs/mediarag/bin/pip install -r "
-    "<plugin>/requirements.txt"
+    "MediaRAG engine deps missing — pip install -r requirements.txt "
+    "from the plugin directory"
 )
 
 

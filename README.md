@@ -1,6 +1,6 @@
 # MediaRAG
 
-Multimodal local asset memory, packaged as a Hermes
+Multimodal local asset memory for content creators, packaged as a Hermes
 agent-plugin per the [agent-plugins.org](https://agent-plugins.org/) 1.0
 standard.
 
@@ -38,8 +38,16 @@ Python dependencies: `pip install -r requirements.txt`. The system tools are
 only needed for the lanes that use them: `ffmpeg` for audio, `pandoc` for
 documents, `pdftotext` for pdf.
 
-On first use the EG2 q4 ONNX weights (~482MB) download into the Hugging Face
-cache. After that everything runs offline (`HF_HUB_OFFLINE=1`).
+The embedding weights are not downloaded on startup. Once, before first search:
+
+```bash
+python -c "from huggingface_hub import snapshot_download; snapshot_download('onnx-community/embeddinggemma-2-ONNX', allow_patterns=['*.json', 'chat_template.jinja', '*.md', 'onnx/*_q4.onnx', 'onnx/*_q4.onnx_data'])"
+```
+
+That is about 480MB into the Hugging Face cache. `huggingface_hub` is installed
+with the requirements (via transformers). A sharded cache is copied once to
+`~/.cache/mediarag/onnx-real` so onnxruntime can load it. After that everything
+runs offline (`HF_HUB_OFFLINE=1`).
 
 To run it as a Hermes plugin, point the plugin loader at this directory (or at
 the agent plugin catalog entry). The manifests (`mcp.json`, `plugin.yaml`,
@@ -76,10 +84,16 @@ found; an unknown scheme fails with the list of what is available.
 
 ## Development
 
-Tests: `pytest tests/`. The fixtures under `tests/fixtures/` are synthetic and
-deterministic, and nothing contacts the network. `tests/bench_engine.py` and
+Tests are direct-run scripts, not pytest-collectable: `python tests/test_ingest_units.py`,
+`python tests/test_engine_deref.py`, `python tests/test_parity_slices.py`,
+`python tests/test_config_root.py`. The fixtures under `tests/fixtures/` are
+synthetic and deterministic, and nothing contacts the network. `tests/bench_engine.py` and
 `scripts/bench.sh` are the local benchmark harness.
 
 ## License
 
 MIT. For security reports, see `SECURITY.md`.
+
+## Acknowledgements
+
+This project was developed with AI assistance using [Hermes Agent](https://github.com/NousResearch/hermes-agent).

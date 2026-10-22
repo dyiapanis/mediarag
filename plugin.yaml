@@ -1,5 +1,5 @@
 name: mediarag
-version: 0.1.0
+version: 0.1.1
 description: "Multimodal local asset memory for content creators — index media, notes, subtitles and audio locally, search by meaning from any MCP-capable agent."
 author: D Yiapanis
 license: MIT

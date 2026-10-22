@@ -11,9 +11,15 @@ from __future__ import annotations
 
 import glob
 import os
+import shutil
 import sys
 import wave
 from functools import lru_cache
+
+try:
+    import fcntl
+except ImportError:  # Windows: no flock; materialize is single-process there
+    fcntl = None
 
 import numpy as np
 import onnxruntime as ort
@@ -35,6 +41,81 @@ MODEL_FILES = {
 }
 
 
+_REAL = os.path.expanduser("~/.cache/mediarag/onnx-real")
+
+
+def _external_escapes(onnx_dir: str) -> bool:
+    """onnxruntime resolves the model symlink, then requires external data
+    inside that directory. huggingface_hub shards blobs into blobs/ab/ vs
+    blobs/cd/, so the data file 'escapes'. A flat blobs/ dir does not.
+    """
+    for name in MODEL_FILES.values():
+        graph = os.path.join(onnx_dir, name)
+        data = graph + "_data"
+        if not (os.path.exists(graph) and os.path.exists(data)):
+            continue
+        gdir = os.path.dirname(os.path.realpath(graph))
+        try:
+            if os.path.commonpath([gdir, os.path.realpath(data)]) != gdir:
+                return True
+        except ValueError:
+            return True
+    return False
+
+
+def _fresh(dst: str, src: str) -> bool:
+    stamp = os.path.join(dst, ".src")
+    if not os.path.isfile(stamp):
+        return False
+    with open(stamp) as f:
+        if f.read() != src:
+            return False
+    for name in MODEL_FILES.values():
+        for fn in (name, name + "_data"):
+            sp = os.path.join(src, fn)
+            dp = os.path.join(dst, fn)
+            if not os.path.lexists(sp):
+                continue
+            if os.path.islink(dp) or not os.path.isfile(dp):
+                return False
+            if os.path.getsize(dp) != os.path.getsize(sp):
+                return False
+    return True
+
+
+def _materialize(src: str, dest: str | None = None) -> str:
+    """Copy the q4 towers to real files beside each other. ~480MB, once per snapshot.
+    ponytail: flock, not a lock manager. A crash mid-copy leaves a .tmp that the
+    next call deletes and rewrites.
+    """
+    dst = dest or _REAL
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    fh = open(dst + ".lock", "a")
+    try:
+        if fcntl is not None:
+            fcntl.flock(fh, fcntl.LOCK_EX)
+        if _fresh(dst, src):
+            return dst
+        tmp = dst + ".tmp"
+        shutil.rmtree(tmp, ignore_errors=True)
+        os.makedirs(tmp)
+        for name in MODEL_FILES.values():
+            for fn in (name, name + "_data"):
+                sp = os.path.join(src, fn)
+                if os.path.lexists(sp):
+                    shutil.copyfile(sp, os.path.join(tmp, fn))  # follows the symlink
+        with open(os.path.join(tmp, ".src"), "w") as f:
+            f.write(src)
+        if os.path.isdir(dst):
+            shutil.rmtree(dst)
+        os.rename(tmp, dst)
+        return dst
+    finally:
+        if fcntl is not None:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+        fh.close()
+
+
 def snap_dir() -> str:
     hits = glob.glob(
         os.path.expanduser(
@@ -42,8 +123,12 @@ def snap_dir() -> str:
         )
     )
     if not hits:
-        raise RuntimeError("embedding model not downloaded — run the model bootstrap")
-    return sorted(hits)[-1]
+        raise RuntimeError(
+            "embedding model not downloaded — snapshot_download "
+            "onnx-community/embeddinggemma-2-ONNX (onnx/*_q4.onnx + *_q4.onnx_data)"
+        )
+    src = sorted(hits)[-1]
+    return _materialize(src) if _external_escapes(src) else src
 
 
 def _sess(model_path: str) -> ort.InferenceSession:

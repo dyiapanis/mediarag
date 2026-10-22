@@ -23,30 +23,27 @@ jobs:
         with:
           path: ~/.cache/huggingface
           key: eg2-onnx-q4
-      - name: Model bootstrap (engine globs the HF cache; ~480MB + dereference)
-        # ORT's external-data containment check follows the HF cache symlinks
-        # to the sharded blobs dirs and refuses (graph in blobs/d7/, data in
-        # blobs/23/). Copy the q4 files as REAL files into a snapshot dir that
-        # sorts last under the engine's snapshots/*/onnx glob.
+      - name: Model bootstrap (engine globs the HF cache; ~480MB)
+        # Download only. The engine materializes sharded-blob symlinks itself
+        # (core/engine.py snap_dir). Drop the old zz-real copy so this step
+        # actually exercises that path — actions/cache will keep restoring it
+        # until the key changes.
         run: |
-          HUB=~/.cache/huggingface/hub/models--onnx-community--embeddinggemma-2-ONNX
-          if [ ! -f "$HUB/snapshots/zz-real/onnx/model_q4.onnx_data" ]; then
-            timeout 900 python -c "from huggingface_hub import snapshot_download; snapshot_download('onnx-community/embeddinggemma-2-ONNX', allow_patterns=['*.json', 'chat_template.jinja', '*.md', 'onnx/*_q4.onnx', 'onnx/*_q4.onnx_data'])"
-            SNAP=$(ls -d "$HUB"/snapshots/*/ | grep -v zz-real | head -1)
-            mkdir -p "$HUB/snapshots/zz-real/onnx"
-            cp -L "$SNAP"onnx/*_q4.onnx "$SNAP"onnx/*_q4.onnx_data "$HUB/snapshots/zz-real/onnx/"
-          fi
-          ls -l "$HUB/snapshots/zz-real/onnx/"
+          timeout 900 python -c "from huggingface_hub import snapshot_download; snapshot_download('onnx-community/embeddinggemma-2-ONNX', allow_patterns=['*.json', 'chat_template.jinja', '*.md', 'onnx/*_q4.onnx', 'onnx/*_q4.onnx_data'])"
+          rm -rf ~/.cache/huggingface/hub/models--onnx-community--embeddinggemma-2-ONNX/snapshots/zz-real
       - name: Model verify (loads the sessions exactly as the engine does)
         run: |
           python - <<'PY'
           import sys; sys.path.insert(0, ".")
           from core import engine
+          print("snap:", engine.snap_dir())
           engine._trunk(); print("trunk OK")
           engine._vis(); print("vision OK")
           engine._aud(); print("audio OK")
           engine._processor(); print("processor OK")
           PY
+      - name: Deref units (no model)
+        run: python tests/test_engine_deref.py
       - name: Ingest units (incl. OOM-regression caps)
         run: python tests/test_ingest_units.py
       - name: Parity slices

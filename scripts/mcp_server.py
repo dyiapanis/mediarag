@@ -12,7 +12,7 @@ _server_dir = os.path.dirname(os.path.abspath(__file__))
 _repo_root = os.path.dirname(_server_dir)
 sys.path.insert(0, _repo_root)
 
-SERVER_INFO = {"name": "mediarag", "version": "0.1.0"}
+SERVER_INFO = {"name": "mediarag", "version": "0.1.1"}
 
 
 def _bootstrap_env():
