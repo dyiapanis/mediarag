@@ -14,8 +14,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: ffmpeg (audio decode dep)
-        run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+      - name: System deps (ffmpeg audio decode, pandoc doc lane)
+        run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg pandoc
       - name: Install deps
         run: pip install -r requirements.txt
       - name: Ingest units (incl. OOM-regression caps)
