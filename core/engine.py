@@ -24,9 +24,9 @@ except ImportError:  # Windows: no flock; materialize is single-process there
 import numpy as np
 import onnxruntime as ort
 
-sys_path = os.environ.get("MEDIARAG_PYLIBS2") or os.path.expanduser("~/pylibs2")
-if os.path.isdir(sys_path):
-    sys.path.insert(0, sys_path)  # always first: venv copies of hub/older deps shadow it otherwise
+sys_path = os.environ.get("MEDIARAG_PYLIBS2")
+if sys_path and os.path.isdir(os.path.expanduser(sys_path)):
+    sys.path.insert(0, os.path.expanduser(sys_path))
 
 from transformers import EmbeddingGemma2Processor  # noqa: E402
 from PIL import Image  # noqa: E402

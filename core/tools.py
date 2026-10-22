@@ -130,6 +130,29 @@ def _fn_from_url(url: str) -> str:
     return f"{hashlib.sha1(url.encode()).hexdigest()[:10]}-{tail}"
 
 
+def _raindrop_token() -> str | None:
+    """Hermes path uses secret_scope (fail closed). Standalone MCP has no agent
+    package, so the client-injected env is the token."""
+    try:
+        from agent.secret_scope import get_secret
+    except ImportError:
+        return os.environ.get("RAINDROP_API_TOKEN") or None
+    try:
+        return get_secret("RAINDROP_API_TOKEN") or None
+    except Exception:
+        return None
+
+
+def _adapter_env() -> dict:
+    env = os.environ.copy()
+    tok = _raindrop_token()
+    if tok:
+        env["RAINDROP_API_TOKEN"] = tok
+    else:
+        env.pop("RAINDROP_API_TOKEN", None)
+    return env
+
+
 def run_adapter_sink(source: str, root: str) -> dict:
     """Adapter scheme URI → runner JSON-lines contract (sources.d)."""
     scheme, rest = source.split("://", 1)
@@ -139,7 +162,8 @@ def run_adapter_sink(source: str, root: str) -> dict:
         return {"code": "unknown_scheme", "scheme": scheme,
                 "available": sorted(adapters)}
     # stdout JSON lines: {"uri","title","text"} text items | {"uri","path"} file items
-    r = subprocess.run([adapter, "fetch", rest], capture_output=True, timeout=1800)
+    r = subprocess.run([adapter, "fetch", rest], capture_output=True, timeout=1800,
+                       env=_adapter_env())
     if r.returncode != 0:
         return {"code": "adapter_error", "scheme": scheme, "stderr": r.stderr.decode()[-300:]}
     from .engine import embed_doc

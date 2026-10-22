@@ -41,13 +41,22 @@ documents, `pdftotext` for pdf.
 The embedding weights are not downloaded on startup. Once, before first search:
 
 ```bash
-python -c "from huggingface_hub import snapshot_download; snapshot_download('onnx-community/embeddinggemma-2-ONNX', allow_patterns=['*.json', 'chat_template.jinja', '*.md', 'onnx/*_q4.onnx', 'onnx/*_q4.onnx_data'])"
+python scripts/fetch_model.py
 ```
 
-That is about 480MB into the Hugging Face cache. `huggingface_hub` is installed
-with the requirements (via transformers). A sharded cache is copied once to
+That is about 480MB into the Hugging Face cache. A sharded cache is copied once to
 `~/.cache/mediarag/onnx-real` so onnxruntime can load it. After that everything
 runs offline (`HF_HUB_OFFLINE=1`).
+
+## What it touches
+
+No telemetry. It shells out to `curl` (http sources), `ffmpeg`, `pandoc`,
+`pdftotext`, and `rclone` when those lanes are used, and to whatever adapter
+you drop in `sources.d/`. It reads the paths you pass plus the corpus at
+`~/.mediarag` (or `MEDIARAG_ROOT`). The Raindrop adapter calls
+`api.raindrop.io` with `RAINDROP_API_TOKEN` — optional; inside Hermes the token
+is resolved through the profile secret scope, and a missing scope does not
+inherit another profile's value.
 
 To run it as a Hermes plugin, point the plugin loader at this directory (or at
 the agent plugin catalog entry). The manifests (`mcp.json`, `plugin.yaml`,

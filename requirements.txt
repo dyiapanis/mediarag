@@ -1,10 +1,10 @@
-# Runtime deps for a clean install. huggingface_hub arrives via transformers
-# (the one-time model download imports it).
+# Matches plugin.yaml python_dependencies. huggingface_hub is direct because
+# scripts/fetch_model.py imports it.
 onnxruntime==1.29.0
-numpy>=2.0
-pillow>=11.0
-tokenizers>=0.20
+numpy>=2.0,<3
+pillow>=11.0,<13
+tokenizers>=0.20,<1
 transformers==5.19.0
-# EmbeddingGemma2Processor's image path imports torch + torchvision.
-torch>=2.0
-torchvision>=0.20
+torch>=2.2,<3
+torchvision>=0.17,<1
+huggingface_hub>=0.26,<3

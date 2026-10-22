@@ -77,6 +77,9 @@ def main() -> int:
         json_v = json.load(open(os.path.join(root, "plugin.json")))["version"]
         srv = open(os.path.join(root, "scripts", "mcp_server.py")).read()
         check("version surfaces match", yaml_v == json_v and f'"version": "{yaml_v}"' in srv, f"{yaml_v} {json_v}")
+        from core import tools as _tools
+        os.environ.pop("RAINDROP_API_TOKEN", None)
+        check("unset raindrop token is not inherited", "RAINDROP_API_TOKEN" not in _tools._adapter_env())
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)

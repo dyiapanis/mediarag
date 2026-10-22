@@ -22,15 +22,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
-          key: eg2-onnx-q4
+          key: eg2-onnx-q4-v2
       - name: Model bootstrap (engine globs the HF cache; ~480MB)
-        # Download only. The engine materializes sharded-blob symlinks itself
-        # (core/engine.py snap_dir). Drop the old zz-real copy so this step
-        # actually exercises that path — actions/cache will keep restoring it
-        # until the key changes.
-        run: |
-          timeout 900 python -c "from huggingface_hub import snapshot_download; snapshot_download('onnx-community/embeddinggemma-2-ONNX', allow_patterns=['*.json', 'chat_template.jinja', '*.md', 'onnx/*_q4.onnx', 'onnx/*_q4.onnx_data'])"
-          rm -rf ~/.cache/huggingface/hub/models--onnx-community--embeddinggemma-2-ONNX/snapshots/zz-real
+        run: timeout 900 python scripts/fetch_model.py
       - name: Model verify (loads the sessions exactly as the engine does)
         run: |
           python - <<'PY'

@@ -39,8 +39,6 @@ def _config_root() -> str:
 TOOL_ROOT = _config_root() or os.environ.get("MEDIARAG_ROOT") or os.path.expanduser("~/.mediarag")
 
 PYVER = f"python{sys.version_info.major}.{sys.version_info.minor}"
-PIN_SITE = os.path.expanduser(f"~/.venvs/mediarag/lib/{PYVER}/site-packages")
-PYLIBS2 = os.path.expanduser("~/pylibs2")
 
 BOOTSTRAP_HINT = (
     "MediaRAG engine deps missing — pip install -r requirements.txt "
@@ -59,19 +57,16 @@ def _engine_importable() -> bool:
 
 
 def _prepare_env() -> bool:
-    """Put the engine dep paths on sys.path; True iff importable afterwards.
+    """Put an optional extra site-packages dir on sys.path. True iff importable after.
 
-    pylibs2 (transformers 5.19 + matching huggingface_hub) must sit BEFORE any
-    older venv site or transformers import crashes on a stale hub copy.
+    MEDIARAG_PYLIBS2, when set, sits ahead of older copies. Absent, it is ignored.
     """
-    venv_sites: list[str] = []
-    for pat in (
-        os.path.expanduser(f"~/.hermes/installs/*/environments/*/venv/lib/{PYVER}/site-packages"),
-        PIN_SITE,
-    ):
-        venv_sites.extend(glob.glob(pat))
-    ordered = venv_sites + [PYLIBS2]  # insert(1) lands LAST-inserted on top: pylibs2 wins
-    for site in ordered:  # dedupe, then reinsert
+    extra = os.environ.get("MEDIARAG_PYLIBS2")
+    hermes_sites = glob.glob(
+        os.path.expanduser(f"~/.hermes/installs/*/environments/*/venv/lib/{PYVER}/site-packages")
+    )
+    ordered = hermes_sites + ([os.path.expanduser(extra)] if extra else [])
+    for site in ordered:
         if os.path.isdir(site):
             sys.path[:] = [p for p in sys.path if os.path.abspath(p) != os.path.abspath(site)]
             sys.path.insert(1, site)

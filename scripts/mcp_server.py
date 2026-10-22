@@ -2,7 +2,8 @@
 
 The v1 client spawns this process per session and injects PLUGIN_ROOT/PLUGIN_DATA;
 tools dispatch into the same core tool functions the native plugin toolset registers.
-Keyless by design: the plugin is local-only — no SaaS, no external clients.
+Keyless except the optional Raindrop adapter, which reads RAINDROP_API_TOKEN
+from the environment the client injects.
 """
 import json
 import os
@@ -12,7 +13,7 @@ _server_dir = os.path.dirname(os.path.abspath(__file__))
 _repo_root = os.path.dirname(_server_dir)
 sys.path.insert(0, _repo_root)
 
-SERVER_INFO = {"name": "mediarag", "version": "0.1.1"}
+SERVER_INFO = {"name": "mediarag", "version": "0.1.2"}
 
 
 def _bootstrap_env():
