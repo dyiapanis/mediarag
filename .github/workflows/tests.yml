@@ -24,7 +24,29 @@ jobs:
           path: ~/.cache/huggingface
           key: eg2-onnx-q4
       - name: Model bootstrap (engine globs the HF cache; ~931MB)
-        run: timeout 900 python -c "from huggingface_hub import snapshot_download; snapshot_download('onnx-community/embeddinggemma-2-ONNX', allow_patterns=['*.json', 'chat_template.jinja', '*.md', 'onnx/model_q4*', 'onnx/vision_encoder_q4*', 'onnx/audio_encoder_q4*'])"
+        run: |
+          timeout 900 python -c "from huggingface_hub import snapshot_download; snapshot_download('onnx-community/embeddinggemma-2-ONNX', allow_patterns=['*.json', 'chat_template.jinja', '*.md', 'onnx/model_q4*', 'onnx/vision_encoder_q4*', 'onnx/audio_encoder_q4*'])"
+          python - <<'PY'
+          import glob, os
+          snap_root = os.path.expanduser("~/.cache/huggingface/hub/models--onnx-community--embeddinggemma-2-ONNX/snapshots")
+          for snap in sorted(glob.glob(snap_root + "/*")):
+              onnx_dir = os.path.join(snap, "onnx")
+              if not os.path.isdir(onnx_dir):
+                  continue
+              for f in sorted(os.listdir(onnx_dir)):
+                  p = os.path.join(onnx_dir, f)
+                  print("MODEL-FILE:", f, os.path.getsize(p), "->", os.path.realpath(p)[:140])
+          PY
+      - name: Model verify (loads the sessions exactly as the engine does)
+        run: |
+          python - <<'PY'
+          import sys; sys.path.insert(0, ".")
+          from core import engine
+          engine._trunk(); print("trunk OK")
+          engine._vis(); print("vision OK")
+          engine._aud(); print("audio OK")
+          engine._processor(); print("processor OK")
+          PY
       - name: Ingest units (incl. OOM-regression caps)
         run: python tests/test_ingest_units.py
       - name: Parity slices
