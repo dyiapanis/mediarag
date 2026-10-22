@@ -7,8 +7,11 @@ import os
 import sys
 import tempfile
 
-import regex  # noqa: F401 — pre-bind venv copies before engine prepends ~/pylibs2
-import PIL  # noqa: F401 — pylibs2/PIL is a broken shadow for this venv (no _imaging)
+try:  # pre-bind venv copies before engine prepends ~/pylibs2 (fleet env only)
+    import regex  # noqa: F401
+    import PIL  # noqa: F401 — pylibs2/PIL is a broken shadow (no _imaging)
+except ImportError:  # clean envs (CI) have no pylibs2 shadow to guard against
+    pass
 
 # repo-root parent (= package parent) so `import mediarag` resolves the package __init__
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))

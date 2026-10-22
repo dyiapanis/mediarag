@@ -6,8 +6,11 @@ import os
 import subprocess
 import shutil
 import sys
-import regex  # noqa: F401 — pre-bind venv copies before engine prepends ~/pylibs2
-import PIL  # noqa: F401 — pylibs2/PIL is a broken shadow for this venv (no _imaging)
+try:  # pre-bind venv copies before engine prepends ~/pylibs2 (fleet env only)
+    import regex  # noqa: F401
+    import PIL  # noqa: F401 — pylibs2/PIL is a broken shadow (no _imaging)
+except ImportError:  # clean envs (CI) have no pylibs2 shadow to guard against
+    pass
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 sys.path.insert(0, ROOT)

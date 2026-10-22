@@ -1,0 +1,24 @@
+name: tests
+# MediaRAG check scripts are direct-run (main() + check() counters), NOT
+# pytest-collectable despite the test_*.py names — CI runs them as scripts.
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install -r requirements.txt
+      - name: Ingest units (incl. OOM-regression caps)
+        run: python tests/test_ingest_units.py
+      - name: Parity slices
+        run: python tests/test_parity_slices.py
+      - name: Config root resolution
+        run: python tests/test_config_root.py
