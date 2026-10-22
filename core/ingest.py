@@ -338,6 +338,7 @@ def index_file(c, path: str, incremental: bool = True) -> tuple[int, list[dict]]
 def index_dir(c, d: str, incremental: bool = True) -> dict:
     """Walk d, index every supported file. Per-file errors collected, never fatal."""
     processed = skipped = added = unchanged = 0
+    skip_entries: list[dict] = []
     for dirpath, dirnames, filenames in os.walk(d, followlinks=False):  # explicit: no symlink loops
         dirnames[:] = sorted(x for x in dirnames if not x.startswith("."))
         for fn in sorted(filenames):
@@ -354,4 +355,6 @@ def index_dir(c, d: str, incremental: bool = True) -> dict:
                 processed += 1
             elif skip:
                 skipped += 1
-    return {"processed": processed, "added": added, "skipped": skipped, "unchanged": unchanged}
+                skip_entries.extend(skip)
+    return {"processed": processed, "added": added, "skipped": skipped,
+            "unchanged": unchanged, "skips": skip_entries[:20]}

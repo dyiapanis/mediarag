@@ -46,7 +46,9 @@ def main():
     try:
         report = ingest.index_dir(c, TMP_ROOT + "/docs")
         print("ingest:", report)
-        assert report["added"] >= 3, "expected text+label rows for each file"
+        for s in report.get("skips", []):
+            print("SKIP:", s)
+        assert report["added"] >= 3, f"expected text+label rows for each file: {report}"
     finally:
         c.close()
 
