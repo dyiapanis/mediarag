@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "mediarag",
-  "version": "0.1.2",
-  "description": "Multimodal local asset memory for content creators — index media, notes, subtitles and audio locally, search by meaning from any MCP-capable agent.",
+  "version": "0.1.3",
+  "description": "Multimodal local search over documents and media — pdf, office files, notes, images, audio and subtitles — from any MCP-capable agent.",
   "author": {
     "name": "D Yiapanis"
   },
@@ -13,6 +13,7 @@
     "embeddings",
     "multimodal",
     "local-first",
+    "documents",
     "media",
     "mcp"
   ]

@@ -1,13 +1,14 @@
 # MediaRAG
 
-Multimodal local asset memory, packaged as a Hermes
+Multimodal local search over documents and media, packaged as a Hermes
 agent-plugin per the [agent-plugins.org](https://agent-plugins.org/) 1.0
 standard.
 
-It indexes your media (images, audio, video soundtracks, notes, subtitles)
-into a local SQLite corpus, and you search it by meaning from any MCP-capable
-agent. "Where is the clip where I talked about the C6 landing" is the kind of
-question it answers.
+It indexes documents (pdf, office files, notes, html) and media (images,
+audio, video soundtracks, subtitles) into one local SQLite corpus, and you
+search both by meaning from any MCP-capable agent. "Which file mentions the
+landing" and "where is the clip where I talked about it" are the same kind of
+question.
 
 How it runs:
 
@@ -25,8 +26,8 @@ models: 12/12 golden vectors at cosine 1.000000.
 
 - Hybrid retrieval: semantic vectors plus an FTS5/BM25 keyword lane, fused with
   reciprocal rank fusion. Exact-string lookups and meaning searches both work.
-- Document ingest: pdf through `pdftotext`, and docx/odt/epub/rst/html/csv/rtf
-  through `pandoc`.
+- Documents and media in one index: pdf via `pdftotext`, docx/odt/epub/rst/html/csv/rtf
+  via `pandoc`, plus images, audio, and subtitles.
 - Incremental re-indexing: unchanged files are skipped on an mtime+size
   fingerprint.
 - Source adapters: external collections through `sources.d` executables (see

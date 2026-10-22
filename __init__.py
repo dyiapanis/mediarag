@@ -107,9 +107,8 @@ def register(ctx) -> None:
 
     reg(
         "mediarag_search",
-        "Search the MediaRAG corpus (hybrid: semantic + keyword/BM25): text, images, "
-        "audio spans, notes, bookmarks. Ranked hits with snippets, scores, spans, and "
-        "base64 image thumbnails.",
+        "Search documents and media (hybrid: semantic + keyword/BM25): text, images, "
+        "audio. Ranked hits with snippets, scores, spans, and image thumbnails.",
         _tools.tool_search,
         {
             "query": {"type": "string", "description": "natural-language query (or keyword terms)"},
@@ -130,8 +129,8 @@ def register(ctx) -> None:
     )
     reg(
         "mediarag_ingest_dir",
-        "Bulk-index a directory into the MediaRAG corpus (md/txt/srt/vtt/images/"
-        "audio). Per-file errors are collected, never fatal.",
+        "Bulk-index a directory of documents and media (pdf, office, notes, "
+        "subtitles, images, audio). Per-file errors are collected, never fatal.",
         _tools.tool_ingest_dir,
         {"path": {"type": "string"},
          "root": {"type": "string", "description": "corpus root (default)"}},

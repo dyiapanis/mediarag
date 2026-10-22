@@ -13,7 +13,7 @@ _server_dir = os.path.dirname(os.path.abspath(__file__))
 _repo_root = os.path.dirname(_server_dir)
 sys.path.insert(0, _repo_root)
 
-SERVER_INFO = {"name": "mediarag", "version": "0.1.2"}
+SERVER_INFO = {"name": "mediarag", "version": "0.1.3"}
 
 
 def _bootstrap_env():
@@ -41,9 +41,8 @@ def _table():
     from core import tools as T
     return [
         ("mediarag_search",
-         "Search the MediaRAG corpus by meaning: text, images, audio spans, notes, "
-         "bookmarks. Ranked hits with snippets, scores, (subtitle/audio) second "
-         "spans, and base64 image thumbnails.",
+         "Search documents and media by meaning: text, images, audio. Ranked hits "
+         "with snippets, scores, spans, and image thumbnails.",
          T.tool_search,
          {"query": {"type": "string", "description": "natural-language query"},
           "k": {"type": "integer", "default": 5},
@@ -58,8 +57,8 @@ def _table():
           "root": {"type": "string", "description": "corpus root (default)"}},
          ["text"]),
         ("mediarag_ingest_dir",
-         "Bulk-index a directory into the MediaRAG corpus (md/txt/srt/vtt/images/"
-         "audio). Per-file errors are collected, never fatal.",
+         "Bulk-index a directory of documents and media (pdf, office, notes, "
+         "subtitles, images, audio). Per-file errors are collected, never fatal.",
          T.tool_ingest_dir,
          {"path": {"type": "string"},
           "root": {"type": "string", "description": "corpus root (default)"}},
