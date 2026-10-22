@@ -23,20 +23,20 @@ jobs:
         with:
           path: ~/.cache/huggingface
           key: eg2-onnx-q4
-      - name: Model bootstrap (engine globs the HF cache; ~931MB)
+      - name: Model bootstrap (engine globs the HF cache; ~480MB + dereference)
+        # ORT's external-data containment check follows the HF cache symlinks
+        # to the sharded blobs dirs and refuses (graph in blobs/d7/, data in
+        # blobs/23/). Copy the q4 files as REAL files into a snapshot dir that
+        # sorts last under the engine's snapshots/*/onnx glob.
         run: |
-          timeout 900 python -c "from huggingface_hub import snapshot_download; snapshot_download('onnx-community/embeddinggemma-2-ONNX', allow_patterns=['*.json', 'chat_template.jinja', '*.md', 'onnx/model_q4*', 'onnx/vision_encoder_q4*', 'onnx/audio_encoder_q4*'])"
-          python - <<'PY'
-          import glob, os
-          snap_root = os.path.expanduser("~/.cache/huggingface/hub/models--onnx-community--embeddinggemma-2-ONNX/snapshots")
-          for snap in sorted(glob.glob(snap_root + "/*")):
-              onnx_dir = os.path.join(snap, "onnx")
-              if not os.path.isdir(onnx_dir):
-                  continue
-              for f in sorted(os.listdir(onnx_dir)):
-                  p = os.path.join(onnx_dir, f)
-                  print("MODEL-FILE:", f, os.path.getsize(p), "->", os.path.realpath(p)[:140])
-          PY
+          HUB=~/.cache/huggingface/hub/models--onnx-community--embeddinggemma-2-ONNX
+          if [ ! -f "$HUB/snapshots/zz-real/onnx/model_q4.onnx_data" ]; then
+            timeout 900 python -c "from huggingface_hub import snapshot_download; snapshot_download('onnx-community/embeddinggemma-2-ONNX', allow_patterns=['*.json', 'chat_template.jinja', '*.md', 'onnx/*_q4.onnx', 'onnx/*_q4.onnx_data'])"
+            SNAP=$(ls -d "$HUB"/snapshots/*/ | grep -v zz-real | head -1)
+            mkdir -p "$HUB/snapshots/zz-real/onnx"
+            cp -L "$SNAP"onnx/*_q4.onnx "$SNAP"onnx/*_q4.onnx_data "$HUB/snapshots/zz-real/onnx/"
+          fi
+          ls -l "$HUB/snapshots/zz-real/onnx/"
       - name: Model verify (loads the sessions exactly as the engine does)
         run: |
           python - <<'PY'
