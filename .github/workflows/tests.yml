@@ -18,8 +18,13 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg pandoc
       - name: Install deps
         run: pip install -r requirements.txt
-      - name: Model bootstrap (engine globs the HF cache; ~515MB)
-        run: python -c "from huggingface_hub import snapshot_download; snapshot_download('onnx-community/embeddinggemma-2-ONNX', allow_patterns=['*.json', 'chat_template.jinja', '*.md', 'onnx/model_q4*', 'onnx/vision_encoder_q4*', 'onnx/audio_encoder_q4*'])"
+      - name: Model cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: eg2-onnx-q4
+      - name: Model bootstrap (engine globs the HF cache; ~931MB)
+        run: timeout 900 python -c "from huggingface_hub import snapshot_download; snapshot_download('onnx-community/embeddinggemma-2-ONNX', allow_patterns=['*.json', 'chat_template.jinja', '*.md', 'onnx/model_q4*', 'onnx/vision_encoder_q4*', 'onnx/audio_encoder_q4*'])"
       - name: Ingest units (incl. OOM-regression caps)
         run: python tests/test_ingest_units.py
       - name: Parity slices
