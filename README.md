@@ -1,6 +1,6 @@
 # MediaRAG
 
-Multimodal local asset memory for content creators, packaged as a Hermes
+Multimodal local asset memory, packaged as a Hermes
 agent-plugin per the [agent-plugins.org](https://agent-plugins.org/) 1.0
 standard.
 
