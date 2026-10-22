@@ -4,3 +4,9 @@ numpy>=2.0
 pillow>=11.0
 tokenizers>=0.20
 transformers==5.19.0
+# The engine's EmbeddingGemma2Processor import chain needs torch + torchvision
+# (Gemma4 image processor) — real runtime deps, previously satisfied only by
+# the fleet's ~/pylibs2 and missing here, which dead-ends `from core import engine`
+# on any clean install.
+torch>=2.0
+torchvision>=0.20
