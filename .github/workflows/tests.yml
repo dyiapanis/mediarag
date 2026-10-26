@@ -44,3 +44,26 @@ jobs:
         run: python tests/test_parity_slices.py
       - name: Config root resolution
         run: python tests/test_config_root.py
+      - name: Contract suite (tool/store/adapter contracts, no model)
+        run: python tests/test_contract.py
+
+  windows:
+    # Portability lane: the model-free suites plus an import smoke. No model
+    # download and no ffmpeg/pandoc — parity and the ingest units stay on Linux
+    # where those are installed.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps (does the declared set resolve on Windows?)
+        run: pip install -r requirements.txt
+      - name: Engine import smoke
+        run: python -c "import sys; sys.path.insert(0, '.'); from core import engine; print('engine imports OK')"
+      - name: Deref units
+        run: python tests/test_engine_deref.py
+      - name: Contract suite (paths, adapters, store, tool contract)
+        run: python tests/test_contract.py
+      - name: Config root resolution
+        run: python tests/test_config_root.py
