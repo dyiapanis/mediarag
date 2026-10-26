@@ -51,6 +51,11 @@ def _engine_importable() -> bool:
         import onnxruntime  # noqa: F401
         import numpy  # noqa: F401
         import transformers  # noqa: F401
+        # The processor chain constructs a video processor needing BOTH torch and
+        # torchvision; without them every embed raises ImportError at call time
+        # while the plugin still advertises five working tools.
+        import torch  # noqa: F401
+        import torchvision  # noqa: F401
         return True
     except Exception:
         return False
