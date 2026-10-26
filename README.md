@@ -39,6 +39,12 @@ Python dependencies: `pip install -r requirements.txt`. The system tools are
 only needed for the lanes that use them: `ffmpeg` for audio, `pandoc` for
 documents, `pdftotext` for pdf.
 
+Runs on Linux and Windows. On Windows those system tools are not preinstalled —
+`winget install Gyan.FFmpeg JohnMacFarlane.Pandoc oschwartz10612.Poppler` (or the
+builds of your choice) and make sure they are on `PATH`. The corpus cache lives
+at `~\.cache\mediarag`; adapters are python scripts and are run through the
+current interpreter there, so they do not need the executable bit or a shebang.
+
 The embedding weights are not downloaded on startup. Once, before first search:
 
 ```bash
@@ -70,7 +76,7 @@ network listener.
 Everything is optional and set through the environment:
 
 - `mediarag-config.yaml` — named corpus config in the plugin dir (`root:` key); wins over env and the default (see `mediarag-config.example.yaml`)
-- `MEDIARAG_ROOT` — corpus root (default: the host profile's data dir)
+- `MEDIARAG_ROOT` — corpus root (default: `~/.mediarag`)
 - `MEDIARAG_PYLIBS2` — extra site-packages path for the engine dependencies
 - `RAINDROP_API_TOKEN`, `PCLOUD_MOUNT`, `OBSIDIAN_VAULT` — adapter inputs
 

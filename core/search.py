@@ -17,7 +17,8 @@ def search(root: str, query: str, k: int = 5, kind: str | None = None,
     try:
         semantic = store.search(c, qvec, k=max(k, 10), kind=kind,
                                 include_thumbnails=include_thumbnails)
-        keyword = store.keyword_search(c, query, k=max(k, 10), kind=kind)
+        keyword = store.keyword_search(c, query, k=max(k, 10), kind=kind,
+                                       include_thumbnails=include_thumbnails)
         blended = store.rrf_blend(semantic, keyword, k=k)
         # semantic-only corpora (no fts rows, e.g. legacy stores) fall back cleanly
         return blended if blended else semantic

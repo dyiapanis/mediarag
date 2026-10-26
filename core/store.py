@@ -6,6 +6,7 @@ assets(uri, kind, span_start, span_end, snippet, thumb, vec) UNIQUE(uri, span_st
 from __future__ import annotations
 
 import base64
+import heapq
 import os
 import re
 import sqlite3
@@ -49,7 +50,11 @@ def db_path(root: str) -> str:
 
 def connect(root: str) -> sqlite3.Connection:
     os.makedirs(os.path.join(root, ".corpus"), exist_ok=True)
-    c = sqlite3.connect(db_path(root))
+    c = sqlite3.connect(db_path(root), timeout=5.0)
+    # WAL: the nightly indexer writes file-by-file while the gateway serves reads.
+    # Rollback-journal mode made each side block the other for the whole build.
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("PRAGMA busy_timeout=5000")
     c.executescript(SCHEMA)
     _migrate(c)
     return c
@@ -116,37 +121,33 @@ def _sanitize_fts_query(query: str) -> str:
 
 
 def keyword_search(c: sqlite3.Connection, query: str, k: int = 5,
-                   kind: str | None = None) -> list[dict]:
+                   kind: str | None = None, include_thumbnails: bool = True) -> list[dict]:
     """FTS5 BM25 hits, same result shape as search(). Empty query → []."""
     if not query.strip():
         return []
-    sub = "SELECT DISTINCT uri FROM assets"
-    clauses, subparams = [], []
-    if kind:
-        clauses.append("kind = ?")
-        subparams.append(kind)
-    if clauses:
-        sub += " WHERE " + " AND ".join(clauses)
     fts_q = _sanitize_fts_query(query)
     if not fts_q:
         return []
-    sql = (f"SELECT uri, span_start FROM kw_fts WHERE kw_fts MATCH ? AND uri IN ({sub}) "
-           "ORDER BY bm25(kw_fts) LIMIT ?")
+    # One JOIN replaces a DISTINCT-uri subquery over all of assets plus a
+    # per-hit lookup (10 extra queries at k=10 on a 770MB db).
+    thumb_col = ", a.thumb" if include_thumbnails else ""
+    sql = ("SELECT a.uri, a.span_start, a.kind, a.span_end, a.snippet" + thumb_col +
+           " FROM kw_fts JOIN assets a"
+           " ON a.uri = kw_fts.uri AND a.span_start = kw_fts.span_start"
+           " WHERE kw_fts MATCH ?" + (" AND a.kind = ?" if kind else "") +
+           " ORDER BY bm25(kw_fts) LIMIT ?")
+    args: list = [fts_q] + ([kind] if kind else []) + [k]
     try:
-        hits = c.execute(sql, (fts_q, ) + tuple(subparams) + (k, )).fetchall()
+        hits = c.execute(sql, args).fetchall()
     except sqlite3.OperationalError:
         return []  # malformed query string (fts syntax chars) — semantic lane still answers
     out = []
-    for uri, span in hits:
-        r = c.execute(
-            "SELECT kind, span_end, snippet, thumb FROM assets WHERE uri=? AND span_start=?",
-            (uri, span)).fetchone()
-        if not r:
-            continue
-        out.append({"uri": uri, "kind": r[0], "score": 0.0, "span_start": span,
-                    "span_end": r[1], "snippet": r[2],
-                    "thumbnail": ("data:image/png;base64," + base64.b64encode(r[3]).decode())
-                    if r[3] else None})
+    for r in hits:
+        thumb = None
+        if include_thumbnails and r[5]:
+            thumb = "data:image/png;base64," + base64.b64encode(r[5]).decode()
+        out.append({"uri": r[0], "kind": r[2], "score": 0.0, "span_start": r[1],
+                    "span_end": r[3], "snippet": r[4], "thumbnail": thumb})
     return out
 
 
@@ -175,29 +176,42 @@ def rrf_blend(semantic: list[dict], keyword: list[dict], k: int = 5,
 
 def search(c: sqlite3.Connection, qvec: np.ndarray, k: int = 5, kind: str | None = None,
            include_thumbnails: bool = True) -> list[dict]:
+    """Top-k cosine hits. Scans vectors as a stream, hydrates only the winners.
+
+    # ponytail: still a full brute-force scan (no ANN index) — ~0.4s at 71k rows.
+    # Add HNSW/FAISS when the corpus passes ~500k rows.
+    """
     where = []
     params: list = []
     if kind:
         where.append("kind = ?")
         params.append(kind)
-    sql = "SELECT uri,kind,span_start,span_end,snippet,vec,thumb FROM assets" \
+    sql = "SELECT rowid, vec FROM assets" \
         + (" WHERE " + " AND ".join(where) if where else "")
-    rows = c.execute(sql, tuple(params)).fetchall()
-    if not rows:
-        return []
-    mats = np.stack([np.frombuffer(r[5], dtype=np.float32) for r in rows])
-    dots = mats @ qvec
-    top = sorted(range(len(rows)), key=lambda i: -dots[i])[:k]
+    # heapq.nlargest evaluates the key once per row, so nothing but the top-k
+    # is held: the old fetchall+np.stack built a 71k x 768 matrix (~440MB peak)
+    # per query, against a 4GB cgroup.
+    top = heapq.nlargest(
+        k, c.execute(sql, tuple(params)),
+        key=lambda r: float(np.frombuffer(r[1], dtype=np.float32) @ qvec),
+    )
+    thumb_col = ", thumb" if include_thumbnails else ""
     out = []
-    for i in top:
-        r = rows[i]
+    for rowid, _vec in top:
+        r = c.execute(
+            "SELECT uri, kind, span_start, span_end, snippet" + thumb_col +
+            " FROM assets WHERE rowid = ?", (rowid,)).fetchone()
+        if r is None:
+            continue
         thumb = None
-        if include_thumbnails and r[6]:
-            thumb = "data:image/png;base64," + base64.b64encode(r[6]).decode()
+        if include_thumbnails and r[5]:
+            thumb = "data:image/png;base64," + base64.b64encode(r[5]).decode()
         out.append({
-            "uri": r[0], "kind": r[1], "score": float(dots[i]),
+            "uri": r[0], "kind": r[1],
+            "score": float(np.frombuffer(_vec, dtype=np.float32) @ qvec),
             "span_start": r[2], "span_end": r[3], "snippet": r[4], "thumbnail": thumb,
         })
+    out.sort(key=lambda h: -h["score"])
     return out
 
 

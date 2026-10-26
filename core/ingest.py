@@ -44,9 +44,27 @@ EXCLUDE_PATTERNS = (
 )
 
 
-def excluded(rel_path: str) -> bool:
+def excluded(path: str, root: str | None = None) -> bool:
+    """True when path matches the rag-sources exclusion set.
+
+    Matched against the path RELATIVE to root: the patterns mirror
+    rag-sources.yaml, where they were authored relative to a source root. Against
+    an absolute path, "*/cache/*" silently ate every file under any /cache/ dir on
+    the host. Separators are normalised both ways for Windows walks, and each
+    pattern is also tried with its leading "*/" stripped so root-level hits
+    (.DS_Store, cache/x) still match.
+    """
     from fnmatch import fnmatch
-    return any(fnmatch(rel_path, pat) for pat in EXCLUDE_PATTERNS)
+    p = path.replace("\\", "/")
+    if root:
+        try:
+            p = os.path.relpath(path, root).replace("\\", "/")
+        except ValueError:  # different drives on Windows
+            pass
+    for pat in EXCLUDE_PATTERNS:
+        if fnmatch(p, pat) or fnmatch(p, pat[2:] if pat.startswith("*/") else pat):
+            return True
+    return False
 
 
 def ext_of(path: str) -> str:
@@ -319,6 +337,11 @@ def index_file(c, path: str, incremental: bool = True) -> tuple[int, list[dict]]
                         os.unlink(tmp)
                     except OSError:
                         pass
+    except ImportError as ex:
+        # Engine deps gone (no torch/torchvision, stale model cache): every file
+        # fails identically, so it gets its own code — the nightly lane has to
+        # fail loudly rather than report success with added=0.
+        return 0, [{"uri": path, "code": "engine_unavailable", "detail": str(ex)[:200]}]
     except Exception as ex:
         code = "corrupt_format" if "decode" in str(ex).lower() or "wave" in str(ex).lower() else "read_error"
         return 0, [{"uri": path, "code": code, "detail": str(ex)[:200]}]
@@ -345,7 +368,7 @@ def index_dir(c, d: str, incremental: bool = True) -> dict:
             p = os.path.join(dirpath, fn)
             if kind_of(p) is None:
                 continue
-            if excluded(p):
+            if excluded(p, d):
                 continue
             n, skip = index_file(c, p, incremental=incremental)
             if n == -1:
@@ -356,5 +379,9 @@ def index_dir(c, d: str, incremental: bool = True) -> dict:
             elif skip:
                 skipped += 1
                 skip_entries.extend(skip)
+    # counts and lists must never disagree: the first 20 ride along, the totals
+    # say whether anything was cut (a consumer printing only the list under-
+    # reports skips, which is how 49 skips read as 20 in build.log).
     return {"processed": processed, "added": added, "skipped": skipped,
-            "unchanged": unchanged, "skips": skip_entries[:20]}
+            "unchanged": unchanged, "skipped_detail": skip_entries[:20],
+            "skips_total": skipped, "skips_truncated": skipped > 20}

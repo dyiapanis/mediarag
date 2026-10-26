@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 
 from . import ingest as ing
 from . import store
@@ -72,8 +73,10 @@ def tool_add_source(source: str, root: str | None = None, **_x) -> dict:
     try:
         if os.path.isdir(p):
             return ing.index_dir(c, p)
+        # index_file returns -1 for "unchanged" — an internal sentinel index_dir
+        # consumes. A public tool must never report a negative add count.
         added, skipped = ing.index_file(c, p)
-        return {"added": added, "skipped": skipped}
+        return {"added": max(added, 0), "skipped": skipped}
     finally:
         c.close()
 
@@ -108,7 +111,8 @@ def fetch_url(url: str) -> dict:
     os.makedirs(os.path.dirname(out), exist_ok=True)
     r = subprocess.run(
         ["curl", "-fsSL", "--proto", "=http,https", "--proto-redir",
-         "=http,https", "--max-time", "120", "-o", out, url],
+         "=http,https", "--max-time", "120", "--max-filesize", "268435456",
+         "-o", out, url],
         capture_output=True, timeout=130,
     )
     if r.returncode != 0:
@@ -161,9 +165,12 @@ def run_adapter_sink(source: str, root: str) -> dict:
     if not adapter:
         return {"code": "unknown_scheme", "scheme": scheme,
                 "available": sorted(adapters)}
+    # Every shipped adapter is python behind a POSIX shebang, which Windows will
+    # not exec — run it through this interpreter there.
+    cmd = ([sys.executable, adapter, "fetch", rest] if os.name == "nt"
+           else [adapter, "fetch", rest])
     # stdout JSON lines: {"uri","title","text"} text items | {"uri","path"} file items
-    r = subprocess.run([adapter, "fetch", rest], capture_output=True, timeout=1800,
-                       env=_adapter_env())
+    r = subprocess.run(cmd, capture_output=True, timeout=1800, env=_adapter_env())
     if r.returncode != 0:
         return {"code": "adapter_error", "scheme": scheme, "stderr": r.stderr.decode()[-300:]}
     from .engine import embed_doc
@@ -186,34 +193,39 @@ def run_adapter_sink(source: str, root: str) -> dict:
                        "snippet": item.get("title", "") or item["text"][:200], "vec": v, "thumb": None}
                 store.upsert_uri(c, item["uri"], [row])
                 added += 1
-            elif "path" in item and os.path.exists(item["path"]):
+            elif "path" in item:
+                if not os.path.exists(item["path"]):
+                    skipped.append({"uri": item["uri"], "code": "missing_path",
+                                    "detail": item["path"][:200]})
+                    continue
                 n, skip = ing.index_file(c, item["path"])
-                added += n
+                added += max(n, 0)
                 for s in skip:
                     s["uri"] = item["uri"]
                     skipped.append(s)
     finally:
         c.close()
-    if r.stderr:
-        for line in r.stderr.decode().splitlines():
-            if line.strip():
-                skipped.append({"code": "adapter_skip", "detail": line.strip()[:200]})
-    return {"added": added, "skipped": skipped}
+    # stderr is the adapter's progress channel, not a failure list: reporting it
+    # as "skipped" turned every successful run into a fake skip entry.
+    return {"added": added, "skipped": skipped,
+            "adapter_log": [ln.strip()[:200] for ln in r.stderr.decode().splitlines() if ln.strip()]}
+
+
+def _adapter_dirs(root: str) -> list[str]:
+    """<root>/sources.d then the package's own adapters/ — and nothing above it.
+
+    The old walk-up used range(3) from core/, which resolved $HOME/adapters:
+    anything executable dropped there silently became an invokable scheme.
+    """
+    package = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return ([os.path.join(root, "sources.d")] if root else []) + \
+           [os.path.join(package, "adapters")]
 
 
 def list_adapters(root: str) -> dict:
-    """Shipped ./adapters/ executables + <root>/sources.d/<scheme> user ones.
-
-    Walks up from this module to find the package's adapters/ dir (works from
-    the repo layout src/mediarag as well as a deployed plugin dir layout).
-    """
+    """<root>/sources.d/<scheme> user adapters + the shipped ./adapters/ ones."""
     adapters: dict[str, str] = {}
-    dirs = [os.path.join(root, "sources.d")] if root else []
-    base = os.path.dirname(os.path.abspath(__file__))  # .../src/mediarag (or deployed pkg)
-    for _ in range(3):
-        dirs.append(os.path.join(base, "adapters"))
-        base = os.path.dirname(base)
-    for d in dirs:
+    for d in _adapter_dirs(root):
         if not os.path.isdir(d):
             continue
         for fn in sorted(os.listdir(d)):
