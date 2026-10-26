@@ -4,23 +4,26 @@ Multimodal local search over documents and media, packaged as a Hermes
 agent-plugin per the [agent-plugins.org](https://agent-plugins.org/) 1.0
 standard.
 
-It indexes documents (pdf, office files, notes, html) and media (images,
-audio, video soundtracks, subtitles) into one local SQLite corpus, and you
-search both by meaning from any MCP-capable agent. "Which file mentions the
+It indexes documents (pdf, office files, notes, html) and media (images, audio,
+subtitles) into one local SQLite corpus, and you search both by meaning from any
+MCP-capable agent. Video is not an ingest format: pull the soundtrack out first
+(`ffmpeg -i clip.mp4 -vn -ac 1 -ar 16000 soundtrack.wav`) and index that — the
+audio tower then makes the clip findable by what was said in it. "Which file mentions the
 landing" and "where is the clip where I talked about it" are the same kind of
 question.
 
 How it runs:
 
-- In-gateway: native tools (`search`, `add_source`, `ingest_dir`, `add_note`,
-  `status`) register once, so one gateway serves all agents and the embedding
-  model loads once.
+- In-gateway: five native tools (`mediarag_search`, `mediarag_add_source`,
+  `mediarag_ingest_dir`, `mediarag_add_note`, `mediarag_status`) register once,
+  so one gateway serves all agents and the embedding model loads once.
 - Cross-client: `mcp.json` declares a stdio MCP server, so Claude Desktop,
   Cursor, and other Agent Plugins compatible clients load the same package.
 - Local-only: no cloud services. The corpus lives at `<root>/.corpus/store.db`.
 
-The text, image, and audio embedders are parity-locked against the reference
-models: 12/12 golden vectors at cosine 1.000000.
+Documents and media are embedded by the same model into the same vector space
+(see [Embedding model](#embedding-model)), which is why one index answers both
+kinds of question.
 
 ## Features
 
@@ -51,16 +54,44 @@ The embedding weights are not downloaded on startup. Once, before first search:
 python scripts/fetch_model.py
 ```
 
-That is about 480MB into the Hugging Face cache. A sharded cache is copied once to
-`~/.cache/mediarag/onnx-real` so onnxruntime can load it. After that everything
+That is about 285MB into the Hugging Face cache; what is in it, and why, is
+covered under [Embedding model](#embedding-model). After the download everything
 runs offline (`HF_HUB_OFFLINE=1`).
+
+## Embedding model
+
+One model embeds everything: [EmbeddingGemma
+2](https://huggingface.co/onnx-community/embeddinggemma-2-ONNX) in its ONNX q4
+build, on onnxruntime, on the CPU. It ships three towers — the text trunk, a
+vision encoder and an audio encoder — and all three write into the same
+768-dimensional space, so a pdf, a photograph and a clip of you talking about
+both are directly comparable.
+
+- **Snapshot** `daa72c51243991dfcaf9f9137d2c573d8f7790c0` of
+  `onnx-community/embeddinggemma-2-ONNX`. `scripts/fetch_model.py` pulls only the
+  q4 towers plus the processor configs, about 285MB, and never at startup. (A
+  cache that has also seen other quantisations of this model will be larger —
+  482MB on the machine this was written on — because those blobs are still there.)
+- **768 dimensions**, L2-normalised, stored as f32 blobs (3,072 bytes per row).
+  Retrieval is exact cosine over the whole corpus; there is no approximate index.
+- **1024-token cap** on the text trunk. Attention is quadratic in sequence
+  length, so tool input is sliced at that boundary rather than trusted.
+- **Chunking**: documents and notes at 1,500 characters, subtitles at 600,
+  audio in 11.2-second windows.
+- If the Hugging Face cache stores the ONNX shards as symlinks, they are
+  materialised once into `~/.cache/mediarag/onnx-real`: onnxruntime will not
+  load external-data blobs out of a sharded cache.
+
+The three embedders are parity-locked against the reference model — 12/12 golden
+vectors at cosine 1.000000 (`tests/fixtures/golden.json`, enforced by
+`tests/test_parity_slices.py`).
 
 ## What it touches
 
 No telemetry. It shells out to `curl` (http sources), `ffmpeg`, `pandoc`,
 `pdftotext`, and `rclone` when those lanes are used, and to whatever adapter
-you drop in `sources.d/`. It reads the paths you pass plus the corpus at
-`~/.mediarag` (or `MEDIARAG_ROOT`). The Raindrop adapter calls
+you drop in `sources.d/`. It reads the paths you pass plus the corpus at `root`
+(`mediarag-config.yaml` `root:`, else `MEDIARAG_ROOT`, else `~/.mediarag`). The Raindrop adapter calls
 `api.raindrop.io` with `RAINDROP_API_TOKEN` — optional; inside Hermes the token
 is resolved through the profile secret scope, and a missing scope does not
 inherit another profile's value.
@@ -100,11 +131,18 @@ found; an unknown scheme fails with the list of what is available.
 
 ## Development
 
-Tests are direct-run scripts, not pytest-collectable: `python tests/test_ingest_units.py`,
-`python tests/test_engine_deref.py`, `python tests/test_parity_slices.py`,
-`python tests/test_config_root.py`. The fixtures under `tests/fixtures/` are
-synthetic and deterministic, and nothing contacts the network. `tests/bench_engine.py` and
-`scripts/bench.sh` are the local benchmark harness.
+Tests are direct-run scripts, not pytest-collectable:
+
+- `python tests/test_contract.py` — tool/store/adapter contracts (no model)
+- `python tests/test_ingest_units.py` — chunking, subtitle timings, store integrity
+- `python tests/test_engine_deref.py` — sharded-cache materialisation (no model)
+- `python tests/test_config_root.py` — corpus-root precedence (no model)
+- `python tests/test_parity_slices.py` — FTS lane, RRF fusion, doc bridge (needs the model)
+
+The fixtures under `tests/fixtures/` are synthetic and deterministic, and nothing
+contacts the network. `tests/bench_engine.py` and `scripts/bench.sh` are the
+local benchmark harness. CI runs the model-free suites on Linux and Windows,
+plus the full parity lane on Linux.
 
 ## License
 
