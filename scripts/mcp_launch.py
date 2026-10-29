@@ -10,10 +10,15 @@ an interpreter that can actually import the stack.
 
 Resolution order:
   1. $MEDIARAG_PYTHON                    explicit override, always wins
-  2. $PLUGIN_DATA/venv/bin/python       per-plugin venv, created once
-     ($PLUGIN_DATA/venv/Scripts/python.exe on Windows)
-  3. this interpreter, if it already imports the engine
-  4. give up, and print the exact command that fixes it
+  2. <plugin>/.venv/bin/python          venv beside the package (created once)
+  3. $PLUGIN_DATA/venv/bin/python       venv in the client-provided data dir
+  4. this interpreter, if it already imports the engine
+  5. give up, and print the exact command that fixes it
+
+The Agent Plugins 1.0 spec is explicit that a plugin bundling an executable must
+reach it by a plugin-relative `command`, and that portable plugins must not
+depend on PATH or ambient variables for resolution — hence this file is named as
+`./scripts/mcp_launch.py` in mcp.json and does its own interpreter discovery.
 
 Exit 3 means "no usable interpreter" — a diagnosable message in the client log
 instead of a silent disconnect.
@@ -47,7 +52,10 @@ def _usable(interp: str) -> bool:
 
 def main() -> int:
     data = os.environ.get("PLUGIN_DATA") or os.path.expanduser("~/.mediarag")
-    candidates = [os.environ.get("MEDIARAG_PYTHON", ""), _venv_python(data), sys.executable]
+    local = (os.path.join(REPO, ".venv", "Scripts", "python.exe") if os.name == "nt"
+             else os.path.join(REPO, ".venv", "bin", "python"))
+    candidates = [os.environ.get("MEDIARAG_PYTHON", ""), local,
+                  _venv_python(data), sys.executable]
     for interp in candidates:
         if not _usable(interp):
             continue
@@ -65,7 +73,8 @@ def main() -> int:
         "  fix, once:\n"
         f"    python3 -m venv {os.path.join(data, 'venv')}\n"
         f"    {venv} -m pip install -r {REQUIREMENTS}\n"
-        "  or point MEDIARAG_PYTHON at an interpreter that already has them.",
+        "  or point MEDIARAG_PYTHON at an interpreter that already has them.\n"
+        f"  the venv beside the package ({local}) is found automatically.",
         file=sys.stderr)
     return 3
 

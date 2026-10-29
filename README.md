@@ -20,18 +20,22 @@ How it runs:
   `mediarag_ingest_dir`, `mediarag_add_note`, `mediarag_status`) register once,
   so one gateway serves all agents and the embedding model loads once.
 - Cross-client: `mcp.json` declares a stdio MCP server, so Claude Desktop,
-  Cursor, and other Agent Plugins compatible clients load the same package.
-  The entry runs `scripts/mcp_launch.py` rather than the server directly: the
-  engine needs numpy, onnxruntime, transformers and torch (~500 MB), and a
-  client's `python3` rarely has them. The launcher is stdlib-only, finds an
-  interpreter that does, and re-execs the server under it — `$MEDIARAG_PYTHON`
-  if set, else `$PLUGIN_DATA/venv`. With neither present it exits 3 with the
-  one command that fixes it, instead of vanishing mid-handshake:
+  Cursor, and other Agent Plugins compliant clients load the same package.
+  Per the spec the entry uses a plugin-relative `command`
+  (`./scripts/mcp_launch.py`), never a bare `python3`: portable plugins must not
+  depend on `PATH` or ambient variables for resolution. That launcher is
+  stdlib-only and finds an interpreter that can import the engine
+  (numpy/onnxruntime/transformers/torch, ~500 MB), which Agent Plugins 1.0 has
+  no field to declare — so a client without a provisioned interpreter needs one
+  command, once:
 
   ```bash
-  python3 -m venv "$PLUGIN_DATA/venv"
-  "$PLUGIN_DATA/venv/bin/python" -m pip install -r requirements.txt
+  python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt
   ```
+
+  Order of preference: `$MEDIARAG_PYTHON`, the package's own `.venv/`, the
+  client's `$PLUGIN_DATA/venv`, then the interpreter that started it. With none
+  present it exits 3 naming what's missing instead of vanishing mid-handshake.
 - Local-only: no cloud services. The corpus lives at `<root>/.corpus/store.db`.
 
 Documents and media are embedded by the same model into the same vector space

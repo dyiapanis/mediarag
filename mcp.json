@@ -3,11 +3,7 @@
   "mcpServers": {
     "mediarag": {
       "type": "stdio",
-      "command": "python3",
-      "args": [
-        "${PLUGIN_ROOT}/scripts/mcp_launch.py"
-      ],
-      "env": {}
+      "command": "./scripts/mcp_launch.py"
     }
   }
 }

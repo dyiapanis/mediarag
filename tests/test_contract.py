@@ -286,9 +286,12 @@ def main() -> int:
     # died mid-handshake and the client only saw "Connection closed". The entry
     # now runs a stdlib-only launcher that finds a provisioned interpreter.
     mcp_json = json.load(open(os.path.join(REPO, "mcp.json")))
-    args = mcp_json["mcpServers"]["mediarag"]["args"]
-    check("mcp.json runs the launcher, not the server directly",
-          any(a.endswith("scripts/mcp_launch.py") for a in args), str(args))
+    entry = mcp_json["mcpServers"]["mediarag"]
+    # Spec: "A plugin that bundles an executable in the package MUST use a
+    # plugin-relative command" and portable plugins must not depend on PATH.
+    check("mcp.json command is plugin-relative, not a bare python3",
+          entry["command"].startswith("./") and entry["command"].endswith("mcp_launch.py"),
+          entry["command"])
 
     launcher_path = os.path.join(REPO, "scripts", "mcp_launch.py")
     launcher = open(launcher_path).read()

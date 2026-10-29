@@ -4,3 +4,4 @@ __pycache__/
 sources.d/
 scripts/dev/
 mediarag-config.yaml
+.venv/
