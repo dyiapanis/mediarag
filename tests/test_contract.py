@@ -160,6 +160,62 @@ def main() -> int:
     finally:
         c.close()
 
+    # ---- add_source URL policy: every hop checked, curl never follows ------
+    import http.server
+    import threading
+    from core import urlsafe
+    ingest.cache_dir = lambda: tmp
+    os.environ.pop("MEDIARAG_ALLOW_PRIVATE_URLS", None)
+    urlsafe._host_is_safe_url = lambda: None  # standalone rules
+    real_run = tools.subprocess.run
+    calls = []
+    tools.subprocess.run = lambda *a, **k: calls.append(a) or real_run(*a, **k)
+    for bad in ("http://127.0.0.1/", "http://10.0.0.5/", "http://169.254.10.10/"):
+        got = tools.fetch_url(bad)
+        check(f"refuses {bad}", got["code"] == "blocked_url", str(got))
+    check("refused URLs never reach curl", calls == [], str(calls))
+
+    class Hops(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/page.txt":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"hello")
+                return
+            self.send_response(302)
+            self.send_header("Location", "/page.txt" if self.path == "/ok"
+                             else "http://169.254.10.10/x")
+            self.end_headers()
+
+        def log_message(self, format, *args):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Hops)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    os.environ["MEDIARAG_ALLOW_PRIVATE_URLS"] = "1"
+    try:
+        got = tools.fetch_url(base + "/ok")
+        check("same-host redirect followed", got["code"] == "ok" and got["size"] == 5, str(got))
+        got = tools.fetch_url(base + "/away")
+        check("redirect to link-local refused", got["code"] == "blocked_url", str(got))
+    finally:
+        os.environ.pop("MEDIARAG_ALLOW_PRIVATE_URLS", None)
+        srv.shutdown()
+        tools.subprocess.run = real_run
+
+    # ---- a per-call root never selects which adapters run ----------------
+    other = os.path.join(tmp, "other-root")
+    os.makedirs(os.path.join(other, "sources.d"))
+    probe = os.path.join(other, "sources.d", "probe")
+    with open(probe, "w", encoding="utf-8") as fh:
+        fh.write("#!/bin/sh\nexit 0\n")
+    os.chmod(probe, 0o755)
+    got = tools.tool_add_source("probe://x", other)
+    check("per-call root adapters are not loaded", got.get("code") == "unknown_scheme", str(got))
+    check("status lists configured adapters only",
+          "probe" not in tools.tool_status(other)["source_adapters"])
+
     # ---- engine probe must notice a missing torch -------------------------
     init = _plugin_init()
     saved = {k: sys.modules.get(k) for k in ("torch", "torchvision")}
