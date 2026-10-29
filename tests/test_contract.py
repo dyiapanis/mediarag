@@ -10,6 +10,7 @@ patterns, the engine probe passing without torch/torchvision, and the two-phase
 KNN / joined keyword lanes returning what brute force says they should.
 """
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -279,6 +280,26 @@ def main() -> int:
         docs = [n for n in ("a.pdf", "b.epub", "c.docx") if f"Papers/{n}" in emitted]
         check(f"{adapter} adapter emits document formats the indexer supports",
               len(docs) == 3, f"{got.returncode} {docs} {got.stderr[:100]}")
+
+    # ---- MCP entry must survive a client that has no engine installed ------
+    # `command: python3` on a stranger's machine is the system python; the server
+    # died mid-handshake and the client only saw "Connection closed". The entry
+    # now runs a stdlib-only launcher that finds a provisioned interpreter.
+    mcp_json = json.load(open(os.path.join(REPO, "mcp.json")))
+    args = mcp_json["mcpServers"]["mediarag"]["args"]
+    check("mcp.json runs the launcher, not the server directly",
+          any(a.endswith("scripts/mcp_launch.py") for a in args), str(args))
+
+    launcher_path = os.path.join(REPO, "scripts", "mcp_launch.py")
+    launcher = open(launcher_path).read()
+    needs = ("numpy", "onnxruntime", "transformers", "torch")
+    check("launcher probes the whole engine stack",
+          all(n in launcher.split("PROBE = ")[1].split("\n")[0] for n in needs), "probe incomplete")
+    spec = importlib.util.spec_from_file_location("mcp_launch", launcher_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    check("launcher rejects a missing interpreter without raising",
+          mod._usable("/nonexistent/python3") is False)
 
     print(f"\n{PASSED} passed, {FAILED} failed")
     return 0 if FAILED == 0 else 1
