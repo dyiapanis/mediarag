@@ -54,35 +54,24 @@ kinds of question.
 
 ## Install
 
-As a Python package (any MCP client, no clone):
+Two ways in; both end at the same `mediarag-mcp` stdio server.
+
+**As a Python package** — any MCP client, no clone:
 
 ```bash
 uvx --from git+https://github.com/dyiapanis/mediarag mediarag-mcp   # runs it
 pipx install git+https://github.com/dyiapanis/mediarag              # or: mediarag-mcp on PATH
 ```
 
-As a Hermes plugin (dependencies provisioned by the host):
+**As a plugin** — for hosts that provision dependencies from the package manifest:
 
 ```bash
-hermes plugins install dyiapanis/mediarag
+hermes plugins install dyiapanis/mediarag    # Hermes reads python_dependencies
 ```
 
 The engine needs numpy, onnxruntime, transformers and torch (~1.7 GB with the
 model weights); `pipx`/`uvx`/`hermes` install that for you. Running from a bare
 checkout instead, see the MCP section below.
-
-## Features
-
-- Hybrid retrieval: semantic vectors plus an FTS5/BM25 keyword lane, fused with
-  reciprocal rank fusion. Exact-string lookups and meaning searches both work.
-- Documents and media in one index: pdf via `pdftotext`, docx/odt/epub/rst/html/csv/rtf
-  via `pandoc`, plus images, audio, and subtitles.
-- Incremental re-indexing: unchanged files are skipped on an mtime+size
-  fingerprint.
-- Source adapters: external collections through `sources.d` executables (see
-  below).
-
-## Install
 
 Python dependencies: `pip install -r requirements.txt`. The system tools are
 only needed for the lanes that use them: `ffmpeg` for audio, `pandoc` for
@@ -104,6 +93,16 @@ That is about 285MB into the Hugging Face cache; what is in it, and why, is
 covered under [Embedding model](#embedding-model). After the download everything
 runs offline (`HF_HUB_OFFLINE=1`).
 
+## Features
+
+- Hybrid retrieval: semantic vectors plus an FTS5/BM25 keyword lane, fused with
+  reciprocal rank fusion. Exact-string lookups and meaning searches both work.
+- Documents and media in one index: pdf via `pdftotext`, docx/odt/epub/rst/html/csv/rtf
+  via `pandoc`, plus images, audio, and subtitles.
+- Incremental re-indexing: unchanged files are skipped on an mtime+size
+  fingerprint.
+- Source adapters: external collections through `sources.d` executables (see
+  below).
 ## Embedding model
 
 One model embeds everything: [EmbeddingGemma
