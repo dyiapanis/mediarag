@@ -2,7 +2,7 @@
 
 ![MediaRAG — one semantic index over documents, images and audio](assets/banner.jpg)
 
-Multimodal local semantic search over documents and media, packaged as a Hermes
+Multimodal local semantic search over documents and media, packaged as an
 agent-plugin per the [agent-plugins.org](https://agent-plugins.org/) 1.0
 standard.
 
