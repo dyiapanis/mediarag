@@ -3,3 +3,4 @@ __pycache__/
 .corpus/
 sources.d/
 scripts/dev/
+mediarag-config.yaml
