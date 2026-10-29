@@ -12,6 +12,7 @@ KNN / joined keyword lanes returning what brute force says they should.
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -303,6 +304,31 @@ def main() -> int:
     spec.loader.exec_module(mod)
     check("launcher rejects a missing interpreter without raising",
           mod._usable("/nonexistent/python3") is False)
+
+    # ---- adapters must not need an exec bit or a shebang -------------------
+    # Wheels and Windows checkouts carry no exec bit; running the file directly
+    # was a PermissionError waiting for the first user sources.d adapter.
+    body = open(os.path.join(REPO, "core", "tools.py")).read() \
+        .split("def run_adapter_sink")[1].split("\ndef ")[0]
+    check("adapters run via sys.executable on every platform",
+          '[sys.executable, adapter, "fetch", rest]' in body and 'os.name == "nt"' not in body,
+          "exec path branches on platform again")
+    check("adapter spawn failure returns adapter_error, not an exception",
+          "except OSError" in body)
+
+    # ---- one version, four files -----------------------------------------
+    def _ver(path, pattern):
+        m = re.search(pattern, open(os.path.join(REPO, path)).read(), re.M)
+        return m.group(1) if m else None
+
+    versions = {
+        "plugin.yaml": _ver("plugin.yaml", r"^version:\s*(\S+)"),
+        "plugin.json": _ver("plugin.json", r'"version":\s*"([^"]+)"'),
+        "mcp_server": _ver("scripts/mcp_server.py", r'"version":\s*"([^"]+)"'),
+        "pyproject": _ver("pyproject.toml", r'^version\s*=\s*"([^"]+)"'),
+    }
+    check(f"version consistent across manifests: {versions}",
+          None not in versions.values() and len(set(versions.values())) == 1)
 
     print(f"\n{PASSED} passed, {FAILED} failed")
     return 0 if FAILED == 0 else 1

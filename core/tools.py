@@ -183,12 +183,15 @@ def run_adapter_sink(source: str, root: str) -> dict:
     if not adapter:
         return {"code": "unknown_scheme", "scheme": scheme,
                 "available": sorted(adapters)}
-    # Every shipped adapter is python behind a POSIX shebang, which Windows will
-    # not exec — run it through this interpreter there.
-    cmd = ([sys.executable, adapter, "fetch", rest] if os.name == "nt"
-           else [adapter, "fetch", rest])
+    # Adapters are Python. Run them through this interpreter on every platform:
+    # wheels and Windows checkouts carry no exec bit, and the shebang is not
+    # something we can rely on. `sys.executable adapter` needs neither.
+    cmd = [sys.executable, adapter, "fetch", rest]
     # stdout JSON lines: {"uri","title","text"} text items | {"uri","path"} file items
-    r = subprocess.run(cmd, capture_output=True, timeout=1800, env=_adapter_env())
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=1800, env=_adapter_env())
+    except OSError as ex:                      # unreadable/removed adapter file
+        return {"code": "adapter_error", "scheme": scheme, "stderr": str(ex)[-300:]}
     if r.returncode != 0:
         return {"code": "adapter_error", "scheme": scheme, "stderr": r.stderr.decode()[-300:]}
     from .engine import embed_doc

@@ -75,14 +75,14 @@ def main() -> int:
     # Opt-in only: a first run pulls ~1.7 GB, which outlives most clients'
     # handshake timeout, so the default is to fail fast and legible.
     if os.environ.get("MEDIARAG_AUTO_BOOTSTRAP") == "1" and shutil.which("uv"):
-        os.execvp("uv", ["uv", "run", "--quiet", "--with-requirements", REQUIREMENTS, SERVER,
+        os.execvp("uv", ["uv", "run", "--quiet", "--no-project", "--with-requirements", REQUIREMENTS, SERVER,
                          *sys.argv[1:]])
         return 3                                 # unreachable
 
     venv = _venv_python(data)
     if shutil.which("uv"):
         alt = ("  or let uv own it, once:\n"
-               f"    uv run --with-requirements {REQUIREMENTS} -- python -c pass\n"
+               f"    uv run --no-project --with-requirements {REQUIREMENTS} -- python -c pass\n"
                "    (MEDIARAG_AUTO_BOOTSTRAP=1 makes this launcher do that on start)\n")
     else:
         alt = "  (install uv and this launcher can build the environment itself)\n"
