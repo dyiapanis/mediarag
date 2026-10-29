@@ -11,14 +11,10 @@ Hugging Face cache and is not downloaded on startup.
 """
 from __future__ import annotations
 
-import glob
 import os
 import sys
 
 _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
-_parent = os.path.dirname(_PLUGIN_DIR)
-if _parent not in sys.path:
-    sys.path.insert(0, _parent)  # lets core.cli / tests import the package standalone
 
 def _config_root() -> str:
     """Corpus root from mediarag-config.yaml in the plugin dir (named config, rag-config.yaml pattern).
@@ -61,29 +57,14 @@ def _engine_importable() -> bool:
         return False
 
 
-def _prepare_env() -> bool:
-    """Put an optional extra site-packages dir on sys.path. True iff importable after.
-
-    MEDIARAG_PYLIBS2, when set, sits ahead of older copies. Absent, it is ignored.
-    """
-    extra = os.environ.get("MEDIARAG_PYLIBS2")
-    hermes_sites = glob.glob(
-        os.path.expanduser(f"~/.hermes/installs/*/environments/*/venv/lib/{PYVER}/site-packages")
-    )
-    ordered = hermes_sites + ([os.path.expanduser(extra)] if extra else [])
-    for site in ordered:
-        if os.path.isdir(site):
-            sys.path[:] = [p for p in sys.path if os.path.abspath(p) != os.path.abspath(site)]
-            sys.path.insert(1, site)
-    return _engine_importable()
-
-
 def register(ctx) -> None:
     """MediaRAG native tool registration (Hermes loader contract)."""
-    if not _prepare_env():
+    # Deps arrive with the plugin install (python_dependencies / requirements.txt).
+    # Nothing here edits sys.path or the process environment: this runs inside the
+    # Hermes gateway, where either would leak into every other plugin.
+    if not _engine_importable():
         print(f"[mediarag] {BOOTSTRAP_HINT}")
         return
-    os.environ.setdefault("HF_HUB_OFFLINE", "1")  # local-only once the model is on disk
 
     import json as _json
 
@@ -120,7 +101,6 @@ def register(ctx) -> None:
             "k": {"type": "integer", "default": 5},
             "kind": {"type": "string", "enum": ["text", "image", "audio"]},
             "include_thumbnails": {"type": "boolean", "default": True},
-            "root": {"type": "string", "description": "corpus root (default the profile corpus)"},
         },
         ["query"],
     )
@@ -129,7 +109,7 @@ def register(ctx) -> None:
         "Store a text note into the MediaRAG corpus (searchable afterwards).",
         _tools.tool_add_note,
         {"text": {"type": "string", "description": "note text"},
-         "root": {"type": "string", "description": "corpus root (default)"}},
+         },
         ["text"],
     )
     reg(
@@ -138,7 +118,7 @@ def register(ctx) -> None:
         "subtitles, images, audio). Per-file errors are collected, never fatal.",
         _tools.tool_ingest_dir,
         {"path": {"type": "string"},
-         "root": {"type": "string", "description": "corpus root (default)"}},
+         },
         ["path"],
     )
     reg(
@@ -147,7 +127,7 @@ def register(ctx) -> None:
         "(raindrop://, pcloud://, obsidian://, rclone://backend:path).",
         _tools.tool_add_source,
         {"source": {"type": "string"},
-         "root": {"type": "string", "description": "corpus root (default)"}},
+         },
         ["source"],
     )
     reg(

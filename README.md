@@ -108,7 +108,6 @@ Everything is optional and set through the environment:
 
 - `mediarag-config.yaml` — named corpus config in the plugin dir (`root:` key); wins over env and the default (see `mediarag-config.example.yaml`)
 - `MEDIARAG_ROOT` — corpus root (default: `~/.mediarag`)
-- `MEDIARAG_PYLIBS2` — extra site-packages path for the engine dependencies
 - `MEDIARAG_ALLOW_PRIVATE_URLS=1` — let `add_source` fetch loopback/private-network URLs (standalone; inside Hermes the host's `security.allow_private_urls` applies). Link-local and cloud-metadata addresses are always refused.
 - `RAINDROP_API_TOKEN`, `PCLOUD_MOUNT`, `OBSIDIAN_VAULT` — adapter inputs
 
