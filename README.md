@@ -52,6 +52,25 @@ Documents and media are embedded by the same model into the same vector space
 (see [Embedding model](#embedding-model)), which is why one index answers both
 kinds of question.
 
+## Install
+
+As a Python package (any MCP client, no clone):
+
+```bash
+uvx --from git+https://github.com/dyiapanis/mediarag mediarag-mcp   # runs it
+pipx install git+https://github.com/dyiapanis/mediarag              # or: mediarag-mcp on PATH
+```
+
+As a Hermes plugin (dependencies provisioned by the host):
+
+```bash
+hermes plugins install dyiapanis/mediarag
+```
+
+The engine needs numpy, onnxruntime, transformers and torch (~1.7 GB with the
+model weights); `pipx`/`uvx`/`hermes` install that for you. Running from a bare
+checkout instead, see the MCP section below.
+
 ## Features
 
 - Hybrid retrieval: semantic vectors plus an FTS5/BM25 keyword lane, fused with
