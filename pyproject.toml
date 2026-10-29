@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mediarag"
+version = "0.1.11"
+description = "Multimodal local search over documents and media — pdf, office files, notes, images, audio and subtitles — from any MCP-capable agent."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "D Yiapanis" }]
+keywords = ["rag", "mcp", "search", "embeddings", "onnx", "multimodal"]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Text Processing :: Indexing",
+]
+dependencies = [
+  "onnxruntime==1.29.0",
+  "numpy>=2.0,<3",
+  "pillow>=11.0,<13",
+  "tokenizers>=0.20,<1",
+  "transformers==5.19.0",
+  "torch>=2.2,<3",
+  "torchvision>=0.17,<1",
+  "huggingface_hub>=0.26,<3",
+]
+
+[project.urls]
+Homepage = "https://github.com/dyiapanis/mediarag"
+Issues = "https://github.com/dyiapanis/mediarag/issues"
+
+[project.scripts]
+mediarag-mcp = "mediarag.scripts.mcp_server:main"
+
+[tool.setuptools]
+package-dir = { mediarag = "." }
+packages = ["mediarag", "mediarag.core", "mediarag.scripts", "mediarag.adapters"]
+
+[tool.setuptools.package-data]
+mediarag = ["mcp.json", "plugin.yaml", "plugin.json", "requirements.txt", "mediarag-config.example.yaml"]
+"mediarag.adapters" = ["*"]

@@ -255,6 +255,8 @@ def list_adapters(root: str) -> dict:
             continue
         for fn in sorted(os.listdir(d)):
             p = os.path.join(d, fn)
-            if os.path.isfile(p) and os.access(p, os.X_OK):
+            # No exec-bit test: wheels and Windows checkouts don't carry one. Every
+            # adapter runs through sys.executable anyway.
+            if os.path.isfile(p) and not fn.startswith((".", "_")) and fn != "__init__.py":
                 adapters.setdefault(fn, p)
     return adapters
