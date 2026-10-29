@@ -264,6 +264,22 @@ def main() -> int:
     check("rclone adapter refuses a path-traversal remote",
           bad.returncode != 0 and "invalid remote" in (bad.stderr + bad.stdout), bad.stderr[:120])
 
+    # ---- adapters must not carry a narrower extension list than the indexer ---
+    # They used to emit only md/txt/subs/images/audio, so a Dropbox or pCloud
+    # folder of pdfs/epubs indexed to nothing, silently. The indexer classifies;
+    # adapters emit and let it answer `unsupported_ext`.
+    for adapter, env_var in (("dropbox", "DROPBOX_DIR"), ("pcloud", "PCLOUD_MOUNT")):
+        with tempfile.TemporaryDirectory() as td:
+            os.makedirs(os.path.join(td, "Papers"))
+            for name in ("a.pdf", "b.epub", "c.docx", "d.md", "e.sh"):
+                open(os.path.join(td, "Papers", name), "wb").write(b"x")
+            got = subprocess.run([sys.executable, os.path.join(REPO, "adapters", adapter), "fetch", "Papers"],
+                                 capture_output=True, text=True, env={**os.environ, env_var: td})
+        emitted = got.stdout
+        docs = [n for n in ("a.pdf", "b.epub", "c.docx") if f"Papers/{n}" in emitted]
+        check(f"{adapter} adapter emits document formats the indexer supports",
+              len(docs) == 3, f"{got.returncode} {docs} {got.stderr[:100]}")
+
     print(f"\n{PASSED} passed, {FAILED} failed")
     return 0 if FAILED == 0 else 1
 

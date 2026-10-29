@@ -3,15 +3,12 @@
 rclone FUSE mount (or any local mount point).
 
 Env: PCLOUD_MOUNT (default: "~/pCloud Drive"). Item shape: {"uri", "path"} —
-the indexer decodes/embeds real files itself. Indexable extensions are the
-server's (md/txt/srt/vtt/images/audio).
+the indexer decodes/embeds real files itself. Every file is emitted; the indexer
+classifies extensions itself and reports unsupported ones as skips.
 """
 import json
 import os
 import sys
-
-INDEXABLE = {".md", ".txt", ".srt", ".vtt", ".png", ".jpg", ".jpeg", ".webp",
-             ".wav", ".mp3", ".m4a", ".ogg", ".flac", ".aac"}
 
 
 def main():
@@ -32,9 +29,6 @@ def main():
         dirnames[:] = [d for d in dirnames if not d.startswith(".") and d != ".corpus"]
         for fn in sorted(filenames):
             if fn.startswith("."):
-                continue
-            ext = os.path.splitext(fn)[1].lower()
-            if ext not in INDEXABLE:
                 continue
             p = os.path.join(dirpath, fn)
             print(json.dumps({"uri": f"pcloud://{os.path.relpath(p, mount)}", "path": p},

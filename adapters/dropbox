@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+"""MediaRAG source adapter: dropbox://<path-in-dropbox> — Dropbox assets via the
+desktop client's local folder (or any local mirror).
+
+Env: DROPBOX_DIR (default: "~/Dropbox"). Item shape: {"uri", "path"} — the
+indexer decodes/embeds real files itself, so this adapter deliberately does not
+carry its own extension list: `ing.index_file` knows which formats it can read
+(pdf/epub/docx via pandoc, pdf via pdftotext, images, audio) and returns an
+`unsupported_ext` skip for the rest. Duplicating that list here is how Dropbox
+PDFs would go missing without a word.
+"""
+import json
+import os
+import sys
+
+# Dropbox's own bookkeeping, plus the usual VCS/mount debris. Anything else is
+# the indexer's call.
+SKIP_DIRS = {".dropbox", ".dropbox.cache", ".git", ".obsidian", ".trash"}
+
+
+def main():
+    if len(sys.argv) != 3 or sys.argv[1] != "fetch":
+        print("usage: dropbox fetch <path-in-dropbox>  (e.g. dropbox://Papers)", file=sys.stderr)
+        return 2
+    base = os.path.expanduser(os.environ.get("DROPBOX_DIR", "~/Dropbox"))
+    sub = sys.argv[2].lstrip("/")
+    root = os.path.join(base, sub)
+    if not os.path.isdir(root):
+        print(f"not a directory: {root} (set DROPBOX_DIR if your Dropbox lives elsewhere)",
+              file=sys.stderr)
+        return 1
+    total = 0
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS]
+        for fn in sorted(filenames):
+            if fn.startswith(".") or fn.endswith(".dropbox.attr"):
+                continue
+            p = os.path.join(dirpath, fn)
+            print(json.dumps({"uri": f"dropbox://{os.path.relpath(p, base)}", "path": p},
+                             ensure_ascii=False))
+            total += 1
+    print(f"emitted {total} files under {sub or '/'} (indexer decides what it can read)",
+          file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

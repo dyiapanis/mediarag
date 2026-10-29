@@ -117,9 +117,11 @@ Everything is optional and set through the environment:
 
 `add_source` accepts public `http(s)://` URLs (fetched with curl, capped at 256MB;
 every redirect hop is checked and loopback/private/link-local/metadata hosts are refused)
-and source-scheme URIs (`<scheme>://...`) handled by adapters. Four ship in the
+and source-scheme URIs (`<scheme>://...`) handled by adapters. Five ship in the
 box:
 
+- `dropbox://` — Dropbox through the desktop client's local folder, or any mirror
+  (`DROPBOX_DIR` env). Skips Dropbox's own `.dropbox/` bookkeeping.
 - `rclone://remote:path` — any [rclone](https://rclone.org/) remote. Files copy
   into a persistent cache at `~/.cache/mediarag/rclone` and index from there.
 - `pcloud://` — walks a locally mounted pCloud drive (`PCLOUD_MOUNT` env).
