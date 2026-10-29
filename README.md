@@ -36,6 +36,16 @@ How it runs:
   Order of preference: `$MEDIARAG_PYTHON`, the package's own `.venv/`, the
   client's `$PLUGIN_DATA/venv`, then the interpreter that started it. With none
   present it exits 3 naming what's missing instead of vanishing mid-handshake.
+
+  If `uv` is installed, it can own the environment instead — same
+  `requirements.txt`, resolved and cached by the installer:
+
+  ```bash
+  uv run --with-requirements requirements.txt -- python -c pass   # once
+  ```
+
+  Set `MEDIARAG_AUTO_BOOTSTRAP=1` to have the launcher run that on start. It is
+  off by default: a first run pulls ~1.7 GB, longer than most clients wait.
 - Local-only: no cloud services. The corpus lives at `<root>/.corpus/store.db`.
 
 Documents and media are embedded by the same model into the same vector space

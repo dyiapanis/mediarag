@@ -24,6 +24,7 @@ Exit 3 means "no usable interpreter" — a diagnosable message in the client log
 instead of a silent disconnect.
 """
 import os
+import shutil
 import subprocess
 import sys
 
@@ -65,15 +66,35 @@ def main() -> int:
         os.execv(interp, argv)                   # POSIX: replace this process
         return 0                                 # unreachable
 
+    # Nothing on this machine has the stack. If uv is around, let it build and
+    # cache a private environment from requirements.txt — the installer does the
+    # resolution that Agent Plugins 1.0 has no field for.
+    # ponytail: plain PyPI resolution, so Linux pulls the CUDA torch build
+    # (~2.5 GB). Add `--index https://download.pytorch.org/whl/cpu` for the CPU
+    # build if that matters; see README.
+    # Opt-in only: a first run pulls ~1.7 GB, which outlives most clients'
+    # handshake timeout, so the default is to fail fast and legible.
+    if os.environ.get("MEDIARAG_AUTO_BOOTSTRAP") == "1" and shutil.which("uv"):
+        os.execvp("uv", ["uv", "run", "--quiet", "--with-requirements", REQUIREMENTS, SERVER,
+                         *sys.argv[1:]])
+        return 3                                 # unreachable
+
     venv = _venv_python(data)
+    if shutil.which("uv"):
+        alt = ("  or let uv own it, once:\n"
+               f"    uv run --with-requirements {REQUIREMENTS} -- python -c pass\n"
+               "    (MEDIARAG_AUTO_BOOTSTRAP=1 makes this launcher do that on start)\n")
+    else:
+        alt = "  (install uv and this launcher can build the environment itself)\n"
     print(
         "mediarag: no Python interpreter with the engine stack was found.\n"
-        "  needs: numpy, onnxruntime, transformers, torch (~500 MB)\n"
+        "  needs: numpy, onnxruntime, transformers, torch\n"
         f"  tried: {[c for c in candidates if c]}\n"
         "  fix, once:\n"
         f"    python3 -m venv {os.path.join(data, 'venv')}\n"
         f"    {venv} -m pip install -r {REQUIREMENTS}\n"
         "  or point MEDIARAG_PYTHON at an interpreter that already has them.\n"
+        + alt +
         f"  the venv beside the package ({local}) is found automatically.",
         file=sys.stderr)
     return 3
