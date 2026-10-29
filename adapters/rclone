@@ -30,6 +30,11 @@ def main():
         print('target must be "<remote>:<path>", e.g. "gdrive:/notes"', file=sys.stderr)
         return 1
     remote, _, remote_path = target.partition(":")
+    # remote is joined into the cache path below, so it must be a bare remote
+    # name: "x/../../etc:y" would otherwise escape the cache directory.
+    if not remote or remote.startswith(".") or any(c in remote for c in ("/", "\\")):
+        print(f"invalid remote name {remote!r}: expected a bare rclone remote", file=sys.stderr)
+        return 1
     remote_path = "/" + remote_path.lstrip("/")
     cache = os.environ.get("RCLONE_ADAPTER_CACHE",
                            os.path.expanduser("~/.cache/mediarag/rclone"))

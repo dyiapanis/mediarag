@@ -13,27 +13,23 @@ _server_dir = os.path.dirname(os.path.abspath(__file__))
 _repo_root = os.path.dirname(_server_dir)
 sys.path.insert(0, _repo_root)
 
-SERVER_INFO = {"name": "mediarag", "version": "0.1.4"}
+SERVER_INFO = {"name": "mediarag", "version": "0.1.5"}
 
 
-def _bootstrap_env():
-    """Identical env preparation to the native register() — same _prepare_env().
-    Returns True iff the engine deps are importable afterwards."""
-    # The plugin root's parent carries __init__.py (the repo-root package shim):
-    parent = os.path.dirname(_repo_root)
-    if parent not in sys.path:
-        sys.path.insert(0, parent)
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "mediarag_pkg", os.path.join(_repo_root, "__init__.py"))
-    if spec is None or spec.loader is None:
-        raise RuntimeError("cannot load mediarag __init__")
-    pkg = importlib.util.module_from_spec(spec)
-    sys.modules["mediarag_pkg"] = pkg
-    spec.loader.exec_module(pkg)
-    ok = pkg._prepare_env()
-    os.environ.setdefault("HF_HUB_OFFLINE", "1")
-    return ok
+def _bootstrap_env() -> bool:
+    """Engine deps come from the install; verify them, say what to do if not.
+
+    No sys.path editing and no process-wide HF_HUB_OFFLINE here: the engine asks
+    Hugging Face for nothing once the weights are on disk (from_pretrained runs
+    with local_files_only=True).
+    """
+    try:
+        from core import engine  # noqa: F401
+        return True
+    except ImportError as ex:
+        print(f"[mediarag] engine deps missing ({ex}) — pip install -r requirements.txt",
+              file=sys.stderr)
+        return False
 
 
 def _table():
@@ -48,27 +44,27 @@ def _table():
           "k": {"type": "integer", "default": 5},
           "kind": {"type": "string", "enum": ["text", "image", "audio"]},
           "include_thumbnails": {"type": "boolean", "default": True},
-          "root": {"type": "string", "description": "corpus root (default the profile corpus)"}},
+          },
          ["query"]),
         ("mediarag_add_note",
          "Store a text note into the MediaRAG corpus (searchable afterwards).",
          T.tool_add_note,
          {"text": {"type": "string", "description": "note text"},
-          "root": {"type": "string", "description": "corpus root (default)"}},
+          },
          ["text"]),
         ("mediarag_ingest_dir",
          "Bulk-index a directory of documents and media (pdf, office, notes, "
          "subtitles, images, audio). Per-file errors are collected, never fatal.",
          T.tool_ingest_dir,
          {"path": {"type": "string"},
-          "root": {"type": "string", "description": "corpus root (default)"}},
+          },
          ["path"]),
         ("mediarag_add_source",
          "Add one source: local file/dir, http(s) URL, or adapter scheme URI "
          "(raindrop://, pcloud://, obsidian://, rclone://backend:path).",
          T.tool_add_source,
          {"source": {"type": "string"},
-          "root": {"type": "string", "description": "corpus root (default)"}},
+          },
          ["source"]),
         ("mediarag_status",
          "MediaRAG corpus status: row counts by kind, corpus root, adapters.",
@@ -97,7 +93,8 @@ def _write(msg):
 
 
 def main():
-    _bootstrap_env()
+    if not _bootstrap_env():
+        return 1
     table = _table()
     schemas = [{"name": n, "description": d,
                 "inputSchema": {"type": "object", "properties": p, "required": r}}

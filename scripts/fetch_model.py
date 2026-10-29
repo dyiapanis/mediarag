@@ -4,6 +4,7 @@ from huggingface_hub import snapshot_download
 
 snapshot_download(
     "onnx-community/embeddinggemma-2-ONNX",
+    revision="daa72c51243991dfcaf9f9137d2c573d8f7790c0",  # pinned: the parity-locked snapshot
     allow_patterns=[
         "*.json",
         "chat_template.jinja",

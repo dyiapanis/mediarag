@@ -108,12 +108,13 @@ Everything is optional and set through the environment:
 
 - `mediarag-config.yaml` — named corpus config in the plugin dir (`root:` key); wins over env and the default (see `mediarag-config.example.yaml`)
 - `MEDIARAG_ROOT` — corpus root (default: `~/.mediarag`)
-- `MEDIARAG_PYLIBS2` — extra site-packages path for the engine dependencies
+- `MEDIARAG_ALLOW_PRIVATE_URLS=1` — let `add_source` fetch loopback/private-network URLs (standalone; inside Hermes the host's `security.allow_private_urls` applies). Link-local and cloud-metadata addresses are always refused.
 - `RAINDROP_API_TOKEN`, `PCLOUD_MOUNT`, `OBSIDIAN_VAULT` — adapter inputs
 
 ## Adapters
 
-`add_source` accepts `http(s)://` URLs (fetched with curl, capped at 256MB)
+`add_source` accepts public `http(s)://` URLs (fetched with curl, capped at 256MB;
+every redirect hop is checked and loopback/private/link-local/metadata hosts are refused)
 and source-scheme URIs (`<scheme>://...`) handled by adapters. Four ship in the
 box:
 
@@ -124,7 +125,9 @@ box:
 - `raindrop://` — Raindrop.io bookmarks through the REST API
   (`RAINDROP_API_TOKEN` env).
 
-To write your own adapter, drop an executable at `sources.d/<scheme>` that
+To write your own adapter, drop an executable at `sources.d/<scheme>` under the
+configured corpus root (`mediarag-config.yaml` / `MEDIARAG_ROOT` / `~/.mediarag`; a
+per-call `root` argument never adds adapters) that
 accepts `fetch <rest>` and prints one JSON object per line, either
 `{"uri","title","text"}` or `{"uri","path"}`. `status` reports the adapters it
 found; an unknown scheme fails with the list of what is available.

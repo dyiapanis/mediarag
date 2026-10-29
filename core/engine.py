@@ -24,10 +24,6 @@ except ImportError:  # Windows: no flock; materialize is single-process there
 import numpy as np
 import onnxruntime as ort
 
-sys_path = os.environ.get("MEDIARAG_PYLIBS2")
-if sys_path and os.path.isdir(os.path.expanduser(sys_path)):
-    sys.path.insert(0, os.path.expanduser(sys_path))
-
 from transformers import EmbeddingGemma2Processor  # noqa: E402
 from PIL import Image  # noqa: E402
 
@@ -141,7 +137,7 @@ def _sess(model_path: str) -> ort.InferenceSession:
 
 @lru_cache(maxsize=1)
 def _processor():
-    return EmbeddingGemma2Processor.from_pretrained(REPO)
+    return EmbeddingGemma2Processor.from_pretrained(REPO, local_files_only=True)
 
 
 @lru_cache(maxsize=4)

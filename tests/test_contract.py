@@ -11,6 +11,7 @@ KNN / joined keyword lanes returning what brute force says they should.
 """
 import importlib.util
 import os
+import subprocess
 import sys
 import tempfile
 
@@ -46,13 +47,12 @@ def fake_vec(_text: str) -> np.ndarray:
 
 
 def _plugin_init():
-    """Load the plugin __init__ as a module without calling register()."""
-    spec = importlib.util.spec_from_file_location(
-        "mr_plugin_init", os.path.join(REPO, "__init__.py"))
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    """Import the plugin as a package (its register() uses relative imports)."""
+    parent = os.path.dirname(REPO)
+    if parent not in sys.path:
+        sys.path.insert(0, parent)
+    import mediarag  # noqa: E402  — the package __init__ under test
+    return mediarag
 
 
 def main() -> int:
@@ -160,6 +160,62 @@ def main() -> int:
     finally:
         c.close()
 
+    # ---- add_source URL policy: every hop checked, curl never follows ------
+    import http.server
+    import threading
+    from core import urlsafe
+    ingest.cache_dir = lambda: tmp
+    os.environ.pop("MEDIARAG_ALLOW_PRIVATE_URLS", None)
+    urlsafe._host_is_safe_url = lambda: None  # standalone rules
+    real_run = tools.subprocess.run
+    calls = []
+    tools.subprocess.run = lambda *a, **k: calls.append(a) or real_run(*a, **k)
+    for bad in ("http://127.0.0.1/", "http://10.0.0.5/", "http://169.254.10.10/"):
+        got = tools.fetch_url(bad)
+        check(f"refuses {bad}", got["code"] == "blocked_url", str(got))
+    check("refused URLs never reach curl", calls == [], str(calls))
+
+    class Hops(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/page.txt":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"hello")
+                return
+            self.send_response(302)
+            self.send_header("Location", "/page.txt" if self.path == "/ok"
+                             else "http://169.254.10.10/x")
+            self.end_headers()
+
+        def log_message(self, format, *args):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Hops)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    os.environ["MEDIARAG_ALLOW_PRIVATE_URLS"] = "1"
+    try:
+        got = tools.fetch_url(base + "/ok")
+        check("same-host redirect followed", got["code"] == "ok" and got["size"] == 5, str(got))
+        got = tools.fetch_url(base + "/away")
+        check("redirect to link-local refused", got["code"] == "blocked_url", str(got))
+    finally:
+        os.environ.pop("MEDIARAG_ALLOW_PRIVATE_URLS", None)
+        srv.shutdown()
+        tools.subprocess.run = real_run
+
+    # ---- a per-call root never selects which adapters run ----------------
+    other = os.path.join(tmp, "other-root")
+    os.makedirs(os.path.join(other, "sources.d"))
+    probe = os.path.join(other, "sources.d", "probe")
+    with open(probe, "w", encoding="utf-8") as fh:
+        fh.write("#!/bin/sh\nexit 0\n")
+    os.chmod(probe, 0o755)
+    got = tools.tool_add_source("probe://x", other)
+    check("per-call root adapters are not loaded", got.get("code") == "unknown_scheme", str(got))
+    check("status lists configured adapters only",
+          "probe" not in tools.tool_status(other)["source_adapters"])
+
     # ---- engine probe must notice a missing torch -------------------------
     init = _plugin_init()
     saved = {k: sys.modules.get(k) for k in ("torch", "torchvision")}
@@ -173,6 +229,40 @@ def main() -> int:
                 sys.modules.pop(k, None)
             else:
                 sys.modules[k] = v
+
+    # ---- the gateway process is left alone --------------------------------
+    check("no sys.path helper survives", not hasattr(init, "_prepare_env"))
+    os.environ.pop("HF_HUB_OFFLINE", None)
+    before = list(sys.path)
+
+    class RegCtx:
+        def __init__(self):
+            self.calls = []
+
+        def register_tool(self, **kw):
+            self.calls.append(kw)
+
+    ctx = RegCtx()
+    init.register(ctx)
+    check("register() does not set HF_HUB_OFFLINE process-wide",
+          "HF_HUB_OFFLINE" not in os.environ)
+    check("register() does not touch sys.path", sys.path == before)
+    check("no tool schema exposes a root argument",
+          all("root" not in kw["schema"]["parameters"]["properties"] for kw in ctx.calls),
+          str([list(kw["schema"]["parameters"]["properties"]) for kw in ctx.calls]))
+    check("all five tools registered", len(ctx.calls) == 5, str(len(ctx.calls)))
+
+    # ---- the two reviewer 'recommended' items ----------------------------
+    fm = (REPO and open(os.path.join(REPO, "scripts", "fetch_model.py")).read()) or ""
+    check("fetch_model pins revision=", "revision=" in fm)
+    eng = open(os.path.join(REPO, "core", "engine.py")).read()
+    check("from_pretrained asks for local files only", "local_files_only=True" in eng)
+
+    rclone = os.path.join(REPO, "adapters", "rclone")
+    bad = subprocess.run([sys.executable, rclone, "fetch", "../escape:x"],
+                         capture_output=True, text=True)
+    check("rclone adapter refuses a path-traversal remote",
+          bad.returncode != 0 and "invalid remote" in (bad.stderr + bad.stdout), bad.stderr[:120])
 
     print(f"\n{PASSED} passed, {FAILED} failed")
     return 0 if FAILED == 0 else 1
