@@ -8,6 +8,7 @@ import sys
 from . import ingest as ing
 from . import store
 from . import search as se
+from .urlsafe import url_problem
 
 _PKG_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -93,7 +94,7 @@ def tool_status(root: str | None = None, **_x) -> dict:
     finally:
         c.close()
     s["root"] = root
-    s["source_adapters"] = list_adapters(root)
+    s["source_adapters"] = list_adapters(_adapter_root())
     return s
 
 
@@ -102,21 +103,38 @@ def tool_status(root: str | None = None, **_x) -> dict:
 _UA = {"User-Agent": "MediaRAG/1.0"}
 
 
+_MAX_REDIRECTS = 5
+
+
 def fetch_url(url: str) -> dict:
-    """Download (≤256MB, 120s) to the persistent cache; return {'code','path'}."""
+    """Download (≤256MB, 120s) to the persistent cache; return {'code','path'}.
+
+    Redirects are followed here, not by curl, so every hop passes url_problem().
+    """
     import shutil
     if not shutil.which("curl"):
         raise RuntimeError("curl not installed")
     out = os.path.join(ing.cache_dir(), "_url", _fn_from_url(url))
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    r = subprocess.run(
-        ["curl", "-fsSL", "--proto", "=http,https", "--proto-redir",
-         "=http,https", "--max-time", "120", "--max-filesize", "268435456",
-         "-o", out, url],
-        capture_output=True, timeout=130,
-    )
-    if r.returncode != 0:
-        return {"code": "fetch_error", "url": url, "detail": r.stderr.decode()[-200:]}
+    target = url
+    for _hop in range(_MAX_REDIRECTS + 1):
+        why = url_problem(target)
+        if why:
+            return {"code": "blocked_url", "url": target, "detail": why}
+        r = subprocess.run(
+            ["curl", "-fsS", "--proto", "=http,https", "--max-time", "120",
+             "--max-filesize", "268435456", "-w", "%{http_code} %{redirect_url}",
+             "-o", out, target],
+            capture_output=True, timeout=130,
+        )
+        if r.returncode != 0:
+            return {"code": "fetch_error", "url": target, "detail": r.stderr.decode()[-200:]}
+        status, _, nxt = r.stdout.decode().strip().partition(" ")
+        if not (status.startswith("3") and nxt):
+            break
+        target = nxt
+    else:
+        return {"code": "fetch_error", "url": url, "detail": "too many redirects"}
     size = os.path.getsize(out)
     if size > 256 * 1024 * 1024:
         os.unlink(out)
@@ -160,7 +178,7 @@ def _adapter_env() -> dict:
 def run_adapter_sink(source: str, root: str) -> dict:
     """Adapter scheme URI → runner JSON-lines contract (sources.d)."""
     scheme, rest = source.split("://", 1)
-    adapters = list_adapters(root)
+    adapters = list_adapters(_adapter_root())
     adapter = adapters.get(scheme)
     if not adapter:
         return {"code": "unknown_scheme", "scheme": scheme,
@@ -209,6 +227,13 @@ def run_adapter_sink(source: str, root: str) -> dict:
     # as "skipped" turned every successful run into a fake skip entry.
     return {"added": added, "skipped": skipped,
             "adapter_log": [ln.strip()[:200] for ln in r.stderr.decode().splitlines() if ln.strip()]}
+
+
+def _adapter_root() -> str:
+    """User adapters load only from the configured corpus root (mediarag-config.yaml /
+    MEDIARAG_ROOT / default), never from a per-call `root`, so a tool argument cannot
+    choose which executables run."""
+    return os.path.expanduser(DEFAULT_ROOT)
 
 
 def _adapter_dirs(root: str) -> list[str]:
