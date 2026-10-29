@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "mediarag",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Multimodal local search over documents and media — pdf, office files, notes, images, audio and subtitles — from any MCP-capable agent.",
   "author": {
     "name": "D Yiapanis"
