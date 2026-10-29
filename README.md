@@ -21,6 +21,17 @@ How it runs:
   so one gateway serves all agents and the embedding model loads once.
 - Cross-client: `mcp.json` declares a stdio MCP server, so Claude Desktop,
   Cursor, and other Agent Plugins compatible clients load the same package.
+  The entry runs `scripts/mcp_launch.py` rather than the server directly: the
+  engine needs numpy, onnxruntime, transformers and torch (~500 MB), and a
+  client's `python3` rarely has them. The launcher is stdlib-only, finds an
+  interpreter that does, and re-execs the server under it — `$MEDIARAG_PYTHON`
+  if set, else `$PLUGIN_DATA/venv`. With neither present it exits 3 with the
+  one command that fixes it, instead of vanishing mid-handshake:
+
+  ```bash
+  python3 -m venv "$PLUGIN_DATA/venv"
+  "$PLUGIN_DATA/venv/bin/python" -m pip install -r requirements.txt
+  ```
 - Local-only: no cloud services. The corpus lives at `<root>/.corpus/store.db`.
 
 Documents and media are embedded by the same model into the same vector space
