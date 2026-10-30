@@ -283,10 +283,16 @@ def main() -> int:
               len(docs) == 3, f"{got.returncode} {docs} {got.stderr[:100]}")
         # A URI path is "/"-separated on every platform. os.path.relpath hands back
         # "Papers\a.pdf" on Windows, which made these adapters emit malformed URIs
-        # (and the assertion above fail on the windows CI lane only).
+        # (and the assertion above fail on the windows CI lane only). The local
+        # `path` field keeps native separators, so only the uri is checked.
+        uris = []
+        for line in emitted.splitlines():
+            try:
+                uris.append(json.loads(line)["uri"])
+            except Exception:
+                pass
         check(f"{adapter} adapter URIs are '/'-separated",
-              "\\" not in emitted and emitted.strip() != "",
-              emitted[:120])
+              bool(uris) and all("\\" not in u for u in uris), str(uris[:2]))
 
     # ---- MCP entry must survive a client that has no engine installed ------
     # `command: python3` on a stranger's machine is the system python; the server
