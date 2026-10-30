@@ -55,7 +55,7 @@ def main():
             if fn.startswith("."):
                 continue
             p = os.path.join(dirpath, fn)
-            rel = os.path.relpath(p, os.path.join(cache, remote))
+            rel = os.path.relpath(p, os.path.join(cache, remote)).replace(os.sep, "/")
             print(json.dumps({"uri": f"rclone://{remote}/{rel}", "path": p},
                              ensure_ascii=False))
             total += 1

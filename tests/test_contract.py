@@ -281,6 +281,12 @@ def main() -> int:
         docs = [n for n in ("a.pdf", "b.epub", "c.docx") if f"Papers/{n}" in emitted]
         check(f"{adapter} adapter emits document formats the indexer supports",
               len(docs) == 3, f"{got.returncode} {docs} {got.stderr[:100]}")
+        # A URI path is "/"-separated on every platform. os.path.relpath hands back
+        # "Papers\a.pdf" on Windows, which made these adapters emit malformed URIs
+        # (and the assertion above fail on the windows CI lane only).
+        check(f"{adapter} adapter URIs are '/'-separated",
+              "\\" not in emitted and emitted.strip() != "",
+              emitted[:120])
 
     # ---- MCP entry must survive a client that has no engine installed ------
     # `command: python3` on a stranger's machine is the system python; the server

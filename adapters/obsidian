@@ -42,7 +42,7 @@ def main():
             if fn.startswith(".") or fn.endswith(".tmp") or ext.lower() in SKIP_EXT:
                 continue
             p = os.path.join(dirpath, fn)
-            rel = os.path.relpath(p, root)
+            rel = os.path.relpath(p, root).replace(os.sep, "/")
             print(json.dumps({"uri": f"obsidian://{rel}", "path": p}, ensure_ascii=False))
             total += 1
     print(f"emitted {total} indexable files from vault {root}", file=sys.stderr)

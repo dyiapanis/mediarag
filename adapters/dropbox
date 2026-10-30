@@ -36,7 +36,7 @@ def main():
             if fn.startswith(".") or fn.endswith(".dropbox.attr"):
                 continue
             p = os.path.join(dirpath, fn)
-            print(json.dumps({"uri": f"dropbox://{os.path.relpath(p, base)}", "path": p},
+            print(json.dumps({"uri": f"dropbox://{os.path.relpath(p, base).replace(os.sep, "/")}", "path": p},
                              ensure_ascii=False))
             total += 1
     print(f"emitted {total} files under {sub or '/'} (indexer decides what it can read)",
