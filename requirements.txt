@@ -2,7 +2,7 @@
 # scripts/fetch_model.py imports it.
 onnxruntime==1.29.0
 numpy>=2.0,<3
-pillow>=11.0,<13
+pillow>=11.0,<14
 tokenizers>=0.20,<1
 transformers==5.19.0
 torch>=2.2,<3
