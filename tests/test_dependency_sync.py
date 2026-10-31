@@ -61,7 +61,32 @@ def from_pyproject() -> dict[str, str]:
     return out
 
 
+def version_surfaces() -> dict[str, str]:
+    """Every file that states the plugin version. The release workflow builds from
+    pyproject while clients read plugin.json / SERVER_INFO, so a copy left behind
+    ships a package that disagrees with itself."""
+    text_yaml = (ROOT / "plugin.yaml").read_text()
+    yaml_v = re.search(r"^version:\s*(\S+)", text_yaml, re.M)
+    json_v = re.search(r'"version"\s*:\s*"([^"]+)"', (ROOT / "plugin.json").read_text())
+    py_v = re.search(r'^version\s*=\s*"([^"]+)"', (ROOT / "pyproject.toml").read_text(), re.M)
+    srv = (ROOT / "scripts" / "mcp_server.py").read_text()
+    srv_v = re.search(r'"name":\s*"mediarag",\s*"version":\s*"([^"]+)"', srv)
+    out = {"plugin.yaml": yaml_v, "plugin.json": json_v,
+           "pyproject.toml": py_v, "scripts/mcp_server.py": srv_v}
+    found = {}
+    for label, match in out.items():
+        assert match is not None, f"version unreadable in {label}"
+        found[label] = match.group(1)
+    return found
+
+
 def main() -> int:
+    versions = version_surfaces()
+    for label, v in versions.items():
+        print(f"PASS {label}: version {v}")
+    assert len(set(versions.values())) == 1, f"version surfaces disagree: {versions}"
+    print(f"PASS all {len(versions)} version surfaces agree on {next(iter(versions.values()))}")
+
     sources = {
         "requirements.txt": from_requirements(),
         "plugin.yaml": from_plugin_yaml(),

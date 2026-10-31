@@ -46,6 +46,8 @@ jobs:
         run: python tests/test_config_root.py
       - name: Contract suite (tool/store/adapter contracts, no model)
         run: python tests/test_contract.py
+      - name: Dependency pin and version surfaces in sync
+        run: python tests/test_dependency_sync.py
 
   windows:
     # Portability lane: the model-free suites plus an import smoke. No model
@@ -67,3 +69,5 @@ jobs:
         run: python tests/test_contract.py
       - name: Config root resolution
         run: python tests/test_config_root.py
+      - name: Dependency pin and version surfaces in sync
+        run: python tests/test_dependency_sync.py
