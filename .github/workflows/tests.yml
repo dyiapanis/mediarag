@@ -52,9 +52,9 @@ jobs:
         run: python tests/test_dependency_sync.py
 
   windows:
-    # Portability lane: the model-free suites plus an import smoke. No model
-    # download and no ffmpeg/pandoc — parity and the ingest units stay on Linux
-    # where those are installed.
+    # Portability lane: the model-free suites plus the real engine — the q4
+    # towers are cached and the e2e smoke runs. No ffmpeg/pandoc, so the audio
+    # and document lanes stay on Linux where those are installed.
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,7 +68,7 @@ jobs:
         with:
           path: ~/.cache/huggingface
           key: eg2-onnx-q4-v2-win
-      - name: Model bootstrap (engine globs the HF cache; ~285MB q4 towers)
+      - name: Model bootstrap (engine globs the HF cache; ~480MB q4 towers)
         run: python scripts/fetch_model.py
       - name: Model verify (loads the sessions exactly as the engine does)
         run: python -c "import sys; sys.path.insert(0, '.'); from core import engine; [f() for f in (engine._trunk, engine._vis, engine._aud, engine._processor)]; print('sessions OK')"
@@ -103,7 +103,7 @@ jobs:
         with:
           path: ~/.cache/huggingface
           key: eg2-onnx-q4-v2-macos
-      - name: Model bootstrap (engine globs the HF cache; ~285MB q4 towers)
+      - name: Model bootstrap (engine globs the HF cache; ~480MB q4 towers)
         run: python scripts/fetch_model.py
       - name: Model verify (loads the sessions exactly as the engine does)
         run: |
