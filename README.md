@@ -52,6 +52,34 @@ Documents and media are embedded by the same model into the same vector space
 (see [Embedding model](#embedding-model)), which is why one index answers both
 kinds of question.
 
+## System Requirements
+
+| | |
+|---|---|
+| **Python** | 3.11 or newer (`requires-python >=3.11`) |
+| **OS** | Linux x86_64 · Windows 10+ x86_64 · macOS 14+ on Apple Silicon |
+| **Memory** | ~1.5 GB resident once everything is loaded — measured 834 MB after the text trunk, 1.06 GB with vision and audio added, 1.5 GB with the processor |
+| **Disk** | ~285 MB of model weights on first run, plus up to ~285 MB more if the Hugging Face cache stores them as symlinks and they are materialised into `~/.cache/mediarag`; the corpus then grows with whatever you index |
+
+**macOS is Apple Silicon only.** `onnxruntime` and `torch` publish no x86_64
+macOS wheels, and their arm64 wheels require macOS 14.0 — an Intel Mac or a
+macOS 13 machine cannot install this engine. CI runs the real engine on macOS 14
+(arm64), Windows and Linux, ingest to search, on every commit.
+
+System tools are needed only by the lanes that use them:
+
+| Tool | Used for | Install |
+|---|---|---|
+| `ffmpeg` | audio | `apt install ffmpeg` · `winget install Gyan.FFmpeg` · `brew install ffmpeg` |
+| `pandoc` | docx, odt, epub, rst, html, csv, rtf | `apt install pandoc` · `winget install JohnMacFarlane.Pandoc` · `brew install pandoc` |
+| `pdftotext` | pdf | `apt install poppler-utils` · `winget install oschwartz10612.Poppler` · `brew install poppler` |
+| `curl` | `add_source` on an http(s) URL | preinstalled on all three |
+
+`curl` ships with Linux and macOS and is present on Windows 10+ (a built-in
+`curl.exe`); `ffmpeg`, `pandoc` and `pdftotext` are not installed by default
+anywhere. Everything else — numpy, onnxruntime, transformers, torch — is
+pip-installed from the declared dependencies.
+
 ## Install
 
 Two ways in; both end at the same `mediarag-mcp` stdio server.
@@ -73,15 +101,15 @@ The engine needs numpy, onnxruntime, transformers and torch (~1.7 GB with the
 model weights); `pipx`/`uvx`/`hermes` install that for you. Running from a bare
 checkout instead, see the MCP section below.
 
-Python dependencies: `pip install -r requirements.txt`. The system tools are
-only needed for the lanes that use them: `ffmpeg` for audio, `pandoc` for
-documents, `pdftotext` for pdf.
+Python dependencies: `pip install -r requirements.txt`.
 
-Runs on Linux and Windows. On Windows those system tools are not preinstalled —
-`winget install Gyan.FFmpeg JohnMacFarlane.Pandoc oschwartz10612.Poppler` (or the
-builds of your choice) and make sure they are on `PATH`. The corpus cache lives
-at `~\.cache\mediarag`; adapters are python scripts and are run through the
-current interpreter there, so they do not need the executable bit or a shebang.
+Runs on Linux, Windows and macOS 14+ on Apple Silicon — see [System
+Requirements](#system-requirements) for memory, disk and the system-tool table.
+On Windows and macOS those tools are not preinstalled; the table has the
+`winget`/`brew` commands. The corpus cache lives at `~/.cache/mediarag`
+(`%USERPROFILE%\.cache\mediarag` on Windows); adapters are python scripts run
+through the current interpreter, so they need neither the executable bit nor a
+shebang.
 
 The embedding weights are not downloaded on startup. Once, before first search:
 
