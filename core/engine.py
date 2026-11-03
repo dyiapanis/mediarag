@@ -159,7 +159,7 @@ def _processor():
     # Local path, not REPO: a sha-pinned snapshot_download leaves no refs/main, so
     # from_pretrained(repo_id, local_files_only=True) fails on a cold bootstrap
     # ("Can't load feature extractor ... preprocessor_config.json") with every file
-    # sitting on disk. The snapshot dir is the same one snap_dir() uses (~285MB).
+    # sitting on disk. The snapshot dir is the same one snap_dir() uses (~480MB).
     return EmbeddingGemma2Processor.from_pretrained(_snapshot_dir(), local_files_only=True)
 
 

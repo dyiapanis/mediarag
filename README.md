@@ -59,7 +59,7 @@ kinds of question.
 | **Python** | 3.11 or newer (`requires-python >=3.11`) |
 | **OS** | Linux x86_64 · Windows 10+ x86_64 · macOS 14+ on Apple Silicon |
 | **Memory** | ~1.5 GB resident once everything is loaded — measured 834 MB after the text trunk, 1.06 GB with vision and audio added, 1.5 GB with the processor |
-| **Disk** | ~285 MB of model weights on first run, plus up to ~285 MB more if the Hugging Face cache stores them as symlinks and they are materialised into `~/.cache/mediarag`; the corpus then grows with whatever you index |
+| **Disk** | ~480 MB of q4 towers on first run (measured 505 MB: 174 MB text + 109 MB vision + 189 MB audio + a 32 MB tokenizer), and up to ~450 MB more if the cache stores them as symlinks and they are materialised into `~/.cache/mediarag`; the corpus then grows with whatever you index |
 
 **macOS is Apple Silicon only.** `onnxruntime` and `torch` publish no x86_64
 macOS wheels, and their arm64 wheels require macOS 14.0 — an Intel Mac or a
@@ -117,7 +117,7 @@ The embedding weights are not downloaded on startup. Once, before first search:
 python scripts/fetch_model.py
 ```
 
-That is about 285MB into the Hugging Face cache; what is in it, and why, is
+That is about 480MB into the Hugging Face cache; what is in it, and why, is
 covered under [Embedding model](#embedding-model). After the download everything
 runs offline (`HF_HUB_OFFLINE=1`).
 
@@ -142,9 +142,10 @@ both are directly comparable.
 
 - **Snapshot** `daa72c51243991dfcaf9f9137d2c573d8f7790c0` of
   `onnx-community/embeddinggemma-2-ONNX`. `scripts/fetch_model.py` pulls only the
-  q4 towers plus the processor configs, about 285MB, and never at startup. (A
-  cache that has also seen other quantisations of this model will be larger —
-  482MB on the machine this was written on — because those blobs are still there.)
+  q4 towers plus the tokenizer and processor configs — 174 MB text, 109 MB
+  vision, 189 MB audio, 32 MB tokenizer, about 505 MB — and never at startup. A
+  cache that has also seen other quantisations of this model will be larger
+  still, because those blobs are not evicted.
 - **768 dimensions**, L2-normalised, stored as f32 blobs (3,072 bytes per row).
   Retrieval is exact cosine over the whole corpus; there is no approximate index.
 - **1024-token cap** on the text trunk. Attention is quadratic in sequence
