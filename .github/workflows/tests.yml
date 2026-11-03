@@ -63,6 +63,15 @@ jobs:
           python-version: "3.12"
       - name: Install deps (does the declared set resolve on Windows?)
         run: pip install -r requirements.txt
+      - name: Model cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: eg2-onnx-q4-v2-win
+      - name: Model bootstrap (engine globs the HF cache; ~285MB q4 towers)
+        run: python scripts/fetch_model.py
+      - name: Model verify (loads the sessions exactly as the engine does)
+        run: python -c "import sys; sys.path.insert(0, '.'); from core import engine; [f() for f in (engine._trunk, engine._vis, engine._aud, engine._processor)]; print('sessions OK')"
       - name: Engine import smoke
         run: python -c "import sys; sys.path.insert(0, '.'); from core import engine; print('engine imports OK')"
       - name: Deref units
@@ -73,3 +82,46 @@ jobs:
         run: python tests/test_config_root.py
       - name: Dependency pin and version surfaces in sync
         run: python tests/test_dependency_sync.py
+      - name: End-to-end smoke (ingest → embed → search → thumbnail)
+        run: python tests/test_smoke_e2e.py
+
+  macos:
+    # Apple Silicon only: onnxruntime 1.29 and torch 2.15 publish no x86_64
+    # macOS wheels, and the arm64 ones declare macosx_14_0. No brew installs —
+    # the smoke is md+png, so ffmpeg/pandoc/poppler are not needed to prove the
+    # engine runs here. Doc/audio lanes stay Linux-parity.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps (does the declared set resolve on Apple Silicon?)
+        run: pip install -r requirements.txt
+      - name: Model cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: eg2-onnx-q4-v2-macos
+      - name: Model bootstrap (engine globs the HF cache; ~285MB q4 towers)
+        run: python scripts/fetch_model.py
+      - name: Model verify (loads the sessions exactly as the engine does)
+        run: |
+          python - <<'PY'
+          import sys; sys.path.insert(0, ".")
+          from core import engine
+          engine._trunk(); print("trunk OK")
+          engine._vis(); print("vision OK")
+          engine._aud(); print("audio OK")
+          engine._processor(); print("processor OK")
+          PY
+      - name: Deref units
+        run: python tests/test_engine_deref.py
+      - name: Contract suite (paths, adapters, store, tool contract)
+        run: python tests/test_contract.py
+      - name: Config root resolution
+        run: python tests/test_config_root.py
+      - name: Dependency pin and version surfaces in sync
+        run: python tests/test_dependency_sync.py
+      - name: End-to-end smoke (ingest → embed → search → thumbnail)
+        run: python tests/test_smoke_e2e.py
