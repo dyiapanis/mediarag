@@ -112,18 +112,37 @@ def _materialize(src: str, dest: str | None = None) -> str:
         fh.close()
 
 
-def snap_dir() -> str:
-    hits = glob.glob(
-        os.path.expanduser(
-            "~/.cache/huggingface/hub/models--onnx-community--embeddinggemma-2-ONNX/snapshots/*/onnx"
-        )
-    )
+def _hub_cache() -> str:
+    """The Hugging Face hub cache root, honouring the env vars users actually set."""
+    explicit = os.environ.get("HF_HUB_CACHE")
+    if explicit:
+        return os.path.expanduser(explicit)
+    hf_home = os.environ.get("HF_HOME")
+    if hf_home:
+        return os.path.join(os.path.expanduser(hf_home), "hub")
+    return os.path.expanduser("~/.cache/huggingface/hub")
+
+
+def _snapshot_dir() -> str:
+    """The pinned snapshot's root (the directory that contains ``onnx/``).
+
+    Resolved from the filesystem rather than through ``from_pretrained(repo_id)``:
+    a cache populated by ``snapshot_download(revision=<sha>)`` has no ``refs/main``
+    (see scripts/fetch_model.py), and hub resolution then fails even though every
+    file is present. Passing this path keeps a cold bootstrap working.
+    """
+    hits = glob.glob(os.path.join(
+        _hub_cache(), "models--onnx-community--embeddinggemma-2-ONNX", "snapshots", "*", "onnx"))
     if not hits:
         raise RuntimeError(
             "embedding model not downloaded — snapshot_download "
             "onnx-community/embeddinggemma-2-ONNX (onnx/*_q4.onnx + *_q4.onnx_data)"
         )
-    src = sorted(hits)[-1]
+    return os.path.dirname(sorted(hits)[-1])
+
+
+def snap_dir() -> str:
+    src = os.path.join(_snapshot_dir(), "onnx")
     return _materialize(src) if _external_escapes(src) else src
 
 
@@ -137,7 +156,11 @@ def _sess(model_path: str) -> ort.InferenceSession:
 
 @lru_cache(maxsize=1)
 def _processor():
-    return EmbeddingGemma2Processor.from_pretrained(REPO, local_files_only=True)
+    # Local path, not REPO: a sha-pinned snapshot_download leaves no refs/main, so
+    # from_pretrained(repo_id, local_files_only=True) fails on a cold bootstrap
+    # ("Can't load feature extractor ... preprocessor_config.json") with every file
+    # sitting on disk. The snapshot dir is the same one snap_dir() uses (~285MB).
+    return EmbeddingGemma2Processor.from_pretrained(_snapshot_dir(), local_files_only=True)
 
 
 @lru_cache(maxsize=4)
