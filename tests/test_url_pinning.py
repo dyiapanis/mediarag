@@ -70,18 +70,20 @@ try:
         os.makedirs(os.path.dirname(out), exist_ok=True)
         with open(out, "w") as fh:
             fh.write("hello")
-        return subprocess.CompletedProcess(cmd, 0, stdout=b"200 ", stderr=b"")
+        return subprocess.CompletedProcess(cmd, 0, stdout=b"200\t\ttext/plain; charset=utf-8", stderr=b"")
 
     real_run, real_which = tools.subprocess.run, shutil.which
     tools.subprocess.run = fake_run
     shutil.which = lambda name: "/usr/bin/curl"
     try:
-        res = tools.fetch_url("https://example.com/readme.md")
+        res = tools.fetch_url("https://example.com/readme")
         check("fetch ok", res["code"] == "ok", res)
         cmd = seen["cmd"]
         check("--resolve passed", "--resolve" in cmd, cmd)
         check("pinned IP reaches curl",
               cmd[cmd.index("--resolve") + 1] == "example.com:443:93.184.216.34", cmd)
+        check("content type names an extensionless download", res["path"].endswith(".txt"), res["path"])
+        check("content type file exists", os.path.isfile(res["path"]))
     finally:
         tools.subprocess.run, shutil.which = real_run, real_which
 

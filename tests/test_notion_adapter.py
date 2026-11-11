@@ -130,8 +130,11 @@ check("missing token -> exit 1", n.main() == 1)
 # --- registration + env plumbing -------------------------------------------
 os.environ["NOTION_TOKEN"] = "tok2"
 check("scheme registered", "notion" in tools.list_adapters("/tmp/corpus"))
-check("env forwards NOTION_TOKEN", tools._adapter_env().get("NOTION_TOKEN") == "tok2")
+check("env forwards NOTION_TOKEN", tools._adapter_env("notion").get("NOTION_TOKEN") == "tok2")
+check("tokenless scheme leaves env alone", tools._adapter_env("fake").get("NOTION_TOKEN") == "tok2")
 os.environ.pop("NOTION_TOKEN", None)
+check("missing token is stripped for its own scheme",
+      "NOTION_TOKEN" not in tools._adapter_env("notion"))
 
 # --- containers must recurse, and properties must be emitted ---------------
 for typ in ("table", "column_list", "column"):
