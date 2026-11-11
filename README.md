@@ -63,7 +63,7 @@ kinds of question.
 
 **macOS is Apple Silicon only.** `onnxruntime` and `torch` publish no x86_64
 macOS wheels, and their arm64 wheels require macOS 14.0 — an Intel Mac or a
-macOS 13 machine cannot install this engine. CI runs the real engine on macOS 14
+macOS 13 machine cannot install this engine. CI runs the real engine on macOS
 (arm64), Windows and Linux, ingest to search, on every commit.
 
 System tools are needed only by the lanes that use them:

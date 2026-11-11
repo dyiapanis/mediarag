@@ -90,7 +90,7 @@ jobs:
     # macOS wheels, and the arm64 ones declare macosx_14_0. No brew installs —
     # the smoke is md+png, so ffmpeg/pandoc/poppler are not needed to prove the
     # engine runs here. Doc/audio lanes stay Linux-parity.
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
