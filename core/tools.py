@@ -10,29 +10,17 @@ from . import store
 from . import search as se
 from .urlsafe import resolve_for_fetch, url_problem  # noqa: F401  (url_problem re-exported for callers)
 
+from .config_root import default_root as _default_root, config_root as _shared_config_root  # noqa: E402
+
 _PKG_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _config_root() -> str:
-    """Corpus root from mediarag-config.yaml in the plugin/package dir.
-
-    Same precedence as the plugin __init__'s TOOL_ROOT (config > MEDIARAG_ROOT env >
-    default) so the native lane (explicit root=) and every defaulting caller —
-    the stdio table, direct core use — resolve identically.
-    # ponytail: flat `root:` line parse — no yaml dep; switch if the config grows keys.
-    """
-    path = os.path.join(_PKG_DIR, "mediarag-config.yaml")
-    try:
-        with open(path, encoding="utf-8") as fh:
-            for line in fh:
-                if line.strip().startswith("root:"):
-                    return line.split(":", 1)[1].strip().strip("'\"")
-    except OSError:
-        pass
-    return ""
+    """Root from the package dir's mediarag-config.yaml (shared seam)."""
+    return _shared_config_root(_PKG_DIR)
 
 
-DEFAULT_ROOT = _config_root() or os.environ.get("MEDIARAG_ROOT") or os.path.expanduser("~/.mediarag")
+DEFAULT_ROOT = _default_root(_PKG_DIR)
 
 
 def _root(root: str | None) -> str:

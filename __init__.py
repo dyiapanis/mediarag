@@ -16,23 +16,15 @@ import sys
 
 _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 
+from .core import config_root as _cr  # noqa: E402
+
+
 def _config_root() -> str:
-    """Corpus root from mediarag-config.yaml in the plugin dir (named config, rag-config.yaml pattern).
-    # ponytail: flat `root:` line parse — no yaml dependency on the stdio spawn path;
-    # switch to yaml.safe_load if the config ever grows beyond one key.
-    """
-    path = os.path.join(_PLUGIN_DIR, "mediarag-config.yaml")
-    try:
-        with open(path, encoding="utf-8") as fh:
-            for line in fh:
-                if line.strip().startswith("root:"):
-                    return line.split(":", 1)[1].strip().strip("'\"")
-    except OSError:
-        pass
-    return ""
+    """Root from the plugin dir's mediarag-config.yaml (delegated to the shared seam)."""
+    return _cr.config_root(_PLUGIN_DIR)
 
 
-TOOL_ROOT = _config_root() or os.environ.get("MEDIARAG_ROOT") or os.path.expanduser("~/.mediarag")
+TOOL_ROOT = _cr.default_root(_PLUGIN_DIR)
 
 PYVER = f"python{sys.version_info.major}.{sys.version_info.minor}"
 
