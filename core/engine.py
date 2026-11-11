@@ -166,10 +166,10 @@ def _hub_cache() -> str:
     """The Hugging Face hub cache root, honouring the env vars users actually set."""
     explicit = os.environ.get("HF_HUB_CACHE")
     if explicit:
-        return os.path.expanduser(explicit)
+        return os.path.expanduser(os.path.expandvars(explicit))
     hf_home = os.environ.get("HF_HOME")
     if hf_home:
-        return os.path.join(os.path.expanduser(hf_home), "hub")
+        return os.path.join(os.path.expanduser(os.path.expandvars(hf_home)), "hub")
     return os.path.expanduser("~/.cache/huggingface/hub")
 
 
