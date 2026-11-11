@@ -131,6 +131,28 @@ for ctype, ext in tools._CONTENT_EXT.items():
         check(f"{ctype} maps to an ingestible extension",
               _ing.kind_of("download" + ext) is not None, (ctype, ext))
 
+# --- pre-normalisation guard: nothing may lower/strip away non-ASCII ---------
+urlsafe._host_is_safe_url = lambda: None
+
+
+def must_not_resolve(*a):
+    raise AssertionError("DNS must not be reached for a refused URL")
+
+
+urlsafe.socket.getaddrinfo = must_not_resolve
+try:
+    for name, shape in [
+        ("KELVIN sign lowercases to 'k'", "http://\u212aexample.com/"),
+        ("trailing NBSP is not eaten", "http://example.com\u00a0/"),
+    ]:
+        pin, why = urlsafe.resolve_for_fetch(shape)
+        check(f"raw-auth guard refuses: {name}",
+              pin is None and "not supported" in (why or ""), why)
+    check("leading Unicode whitespace leaves a structured refusal",
+          (urlsafe.url_problem("\u3000https://example.com/x") or "") != "", None)
+finally:
+    urlsafe.socket.getaddrinfo = real_getaddrinfo
+
 # --- REAL curl: a dotted hostname must not escape the pin --------------------
 # The pin used to be keyed on the dot-stripped host while curl still received the
 # dotted URL, so curl ignored the pin and re-resolved. These two tests use a real
@@ -138,6 +160,7 @@ for ctype, ext in tools._CONTENT_EXT.items():
 # the real server sits on 127.0.0.1. Any successful fetch would mean the pin lost.
 if shutil.which("curl"):
     import http.server
+    import socket
     import threading
 
     hits = {"secret": 0}
@@ -153,6 +176,12 @@ if shutil.which("curl"):
                 # the pin must MATCH curl's canonical spelling of this very host.
                 self.send_response(302)
                 self.send_header("Location", f"http://xn--9ca.localtest.me:{port}/secret.txt")
+                self.end_headers()
+            elif self.path == "/start-tab":
+                # Location whose URL carries a RAW TAB: the -w redirect_url field
+                # then contains an embedded tab, which used to truncate the target.
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.1:{port}\t/secret.txt")
                 self.end_headers()
             elif self.path == "/secret.txt":
                 hits["secret"] += 1
@@ -173,8 +202,20 @@ if shutil.which("curl"):
     port = srv.server_address[1]
     threading.Thread(target=srv.serve_forever, daemon=True).start()
 
+    class V6Server(http.server.HTTPServer):
+        address_family = socket.AF_INET6
+
+    srv6 = V6Server(("::1", 0), Handler)
+    port6 = srv6.server_address[1]
+    threading.Thread(target=srv6.serve_forever, daemon=True).start()
+
+    _DNS_TABLE = {"example.com": "127.0.0.1", "localhost": "127.0.0.2",
+                  "127.0.0.1": "127.0.0.1", "127.0.0.2": "127.0.0.2"}
+
     def split_dns(host, port, *rest):
-        ip = "127.0.0.1" if host.startswith("example.com") else "127.0.0.2"
+        if host == "::1":
+            return [(10, 1, 6, "", ("::2", 0, 0, 0))]
+        ip = _DNS_TABLE.get(host, "127.0.0.2")
         return [(2, 1, 6, "", (ip, 0))]
 
     try:
@@ -198,9 +239,27 @@ if shutil.which("curl"):
         res = tools.fetch_url(f"http://example.com:{port}/start-puny")
         check("punycode redirect target does not reach the secret either",
               res["code"] != "ok" and hits["secret"] == 0, (res, hits))
+
+        # IPv6 literal: the --resolve host field needs brackets; unbracketed, curl
+        # ignored the pin and connected to ::1 (a real server hit).
+        before = hits["secret"]
+        res = tools.fetch_url(f"http://[::1]:{port6}/secret.txt")
+        check("IPv6 literal pin is not ignored", res["code"] != "ok", res)
+        check("IPv6 pinned address never reached the server", hits["secret"] == before, hits)
+
+        # A raw tab inside redirect_url must not truncate the target: the FULL
+        # tab-bearing URL must reach curl (which rejects it as malformed). The
+        # old parser silently fetched the host root instead and called it ok.
+        res = tools.fetch_url(f"http://example.com:{port}/start-tab")
+        check("tab-bearing redirect is not truncated",
+              res["code"] == "fetch_error" and "\t" in res["url"], res)
+        check("truncated/truncating fetch never hit the secret path",
+              hits["secret"] == before, hits)
     finally:
         srv.shutdown()
         srv.server_close()
+        srv6.shutdown()
+        srv6.server_close()
         urlsafe.socket.getaddrinfo = real_getaddrinfo
         os.environ.pop("MEDIARAG_ALLOW_PRIVATE_URLS", None)
 else:

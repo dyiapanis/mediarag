@@ -40,10 +40,20 @@ def _ip_problem(ip, allow_private: bool) -> Optional[str]:
     return None
 
 
-# Hostnames we are willing to pin: ASCII letters, digits, label separators and
-# the colon of an IPv6 literal. curl punycodes everything else, which would make
-# the --resolve key unmatchable (see _resolve's non-ASCII refusal).
+# The single URLSAFE_HOST_CHARS set guards a manually-extracted raw host. .hostname is unusable for
+# this: it lowercases (turning U+212A KELVIN SIGN into ASCII 'k') and would let
+# non-ASCII sneak past the guard only to be canonicalised differently by curl.
 URLSAFE_HOST_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789.-:")
+
+
+def _raw_host(parts) -> str:
+    """The authority as written, before ANY normalisation."""
+    netloc = parts.netloc or ""
+    if "@" in netloc:  # userinfo rejected separately; never its business here
+        netloc = netloc.rsplit("@", 1)[1]
+    if netloc.startswith("[") and "]" in netloc:  # IPv6 literal without its brackets
+        return netloc[1:netloc.index("]")]
+    return netloc.rsplit(":", 1)[0] if ":" in netloc else netloc
 
 
 def _resolve(url: str) -> tuple[list[str], Optional[str]]:
@@ -53,16 +63,22 @@ def _resolve(url: str) -> tuple[list[str], Optional[str]]:
     the address the fetch can later be pinned to. Returning the IPs alongside
     the verdict is what closes the DNS-rebinding TOCTOU hole.
     """
+    url = url or ""
     try:
-        parts = urlsplit((url or "").strip())
-        host = (parts.hostname or "").rstrip(".").lower()
+        parts = urlsplit(url)
     except ValueError:
         return [], "unparseable URL"
-    if any(ch not in URLSAFE_HOST_CHARS for ch in host):
+    raw_host = _raw_host(parts)
+    # Guard the authority AS WRITTEN, before any normalisation: Python lowercases
+    # U+212A (KELVIN SIGN) to ASCII 'k' via urlsplit, so a normalised host could
+    # pass here and then be canonicalised differently by curl — which is how a
+    # pin stops pinning.
+    if any(ch not in URLSAFE_HOST_CHARS for ch in raw_host):
         # curl canonicalises non-ASCII hosts to punycode, so a Unicode --resolve
         # key can never match. Until we canonicalise the exact way curl does,
-        # IDN URLs must be refused — a pin that cannot match is no pin at all.
-        return [], "non-ASCII hostnames are not supported"
+        # such URLs must be refused — a pin that cannot match is no pin at all.
+        return [], "non-ASCII or invalid hostname characters are not supported"
+    host = raw_host.rstrip(".").lower()
     if parts.scheme.lower() not in ("http", "https"):
         return [], f"only http(s) URLs are allowed, got {parts.scheme or 'no scheme'!r}"
     if not host or "@" in parts.netloc:
@@ -110,14 +126,15 @@ def resolve_for_fetch(url: str) -> tuple[Optional[str], Optional[str]]:
     if not ips:
         return None, "no usable resolved address"
     parts = urlsplit(url)
-    # The --resolve key must match the host EXACTLY as it appears in the URL.
-    # urlsplit lowercases .hostname but keeps a trailing dot; stripping that dot
-    # here meant curl never applied the pin to `host.` URLs and re-resolved them.
-    host = parts.hostname or ""
+    raw_host = _raw_host(parts)
+    if any(ch not in URLSAFE_HOST_CHARS for ch in raw_host):
+        return None, "non-ASCII or invalid hostname characters are not supported"
+    plain = raw_host.lower()  # dot preserved EXACTLY as written: round-1's fix
+    host_key = f"[{plain}]" if ":" in plain else plain  # IPv6 keys need brackets or curl ignores the pin
     try:
         port = parts.port or (443 if parts.scheme.lower() == "https" else 80)
     except ValueError:
         return None, "unparseable port in URL"
     ip = ips[0]
     literal = f"[{ip}]" if ":" in ip else ip  # IPv6 needs brackets in --resolve
-    return f"{host}:{port}:{literal}", None
+    return f"{host_key}:{port}:{literal}", None
