@@ -60,7 +60,7 @@ try:
           engine._hub_cache())
     os.environ.pop("HF_HUB_CACHE", None)
     os.environ["HF_HOME"] = "$MEDIARAG_TEST_BASE/hf"
-    check("HF_HOME expands $VAR", engine._hub_cache() == "/opt/models/hf/hub",
+    check("HF_HOME expands $VAR", engine._hub_cache() == os.path.join("/opt/models/hf", "hub"),
           engine._hub_cache())
 finally:
     for k, v in saved.items():
