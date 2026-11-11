@@ -72,8 +72,10 @@ def upsert_uri(c: sqlite3.Connection, uri: str, rows: list[dict], fp: str | None
     """Replace every row for uri, then insert the new ones. Returns rows added."""
     c.execute("DELETE FROM assets WHERE uri = ?", (uri,))
     c.execute("DELETE FROM kw_fts WHERE uri = ?", (uri,))  # FTS5 mirror, stays in lockstep
-    if fp is not None:
-        c.execute("DELETE FROM fingerprints WHERE uri = ?", (uri,))
+    # Always clear the fingerprint, even when fp is None: leaving it behind would
+    # make the next incremental ingest skip this URI as "unchanged" while its
+    # rows were just deleted — a permanently empty document.
+    c.execute("DELETE FROM fingerprints WHERE uri = ?", (uri,))
     try:
         c.executemany(
             "INSERT OR REPLACE INTO assets(uri,kind,span_start,span_end,snippet,thumb,vec) VALUES(?,?,?,?,?,?,?)",

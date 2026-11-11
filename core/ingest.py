@@ -358,6 +358,32 @@ def index_file(c, path: str, incremental: bool = True) -> tuple[int, list[dict]]
     return len(rows), []
 
 
+def reap_missing(c, d: str) -> list[str]:
+    """Delete index rows for local files under d that no longer exist.
+
+    Removing a file (or a whole source directory) used to leave its chunks and
+    FTS rows behind forever, so search kept surfacing documents that were gone.
+    Only absolute local paths are considered — remote URIs (pcloud://, notion://,
+    https://) are not filesystem paths and must never be reaped here.
+    """
+    base = os.path.abspath(d)
+    gone = []
+    for (uri,) in c.execute("SELECT DISTINCT uri FROM assets"):
+        if not os.path.isabs(uri):
+            continue
+        if uri != base and not uri.startswith(base + os.sep):
+            continue
+        if not os.path.exists(uri):
+            gone.append(uri)
+    for uri in gone:
+        c.execute("DELETE FROM assets WHERE uri = ?", (uri,))
+        c.execute("DELETE FROM kw_fts WHERE uri = ?", (uri,))
+        c.execute("DELETE FROM fingerprints WHERE uri = ?", (uri,))
+    if gone:
+        c.commit()
+    return gone
+
+
 def index_dir(c, d: str, incremental: bool = True) -> dict:
     """Walk d, index every supported file. Per-file errors collected, never fatal."""
     processed = skipped = added = unchanged = 0
@@ -382,6 +408,8 @@ def index_dir(c, d: str, incremental: bool = True) -> dict:
     # counts and lists must never disagree: the first 20 ride along, the totals
     # say whether anything was cut (a consumer printing only the list under-
     # reports skips, which is how 49 skips read as 20 in build.log).
+    reaped = reap_missing(c, d)
     return {"processed": processed, "added": added, "skipped": skipped,
             "unchanged": unchanged, "skipped_detail": skip_entries[:20],
-            "skips_total": skipped, "skips_truncated": skipped > 20}
+            "skips_total": skipped, "skips_truncated": skipped > 20,
+            "reaped": len(reaped), "reaped_uris": reaped[:20]}
