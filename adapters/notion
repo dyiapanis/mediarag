@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+"""MediaRAG source adapter: notion://<page-or-database-id> — Notion pages as text.
+
+Env: NOTION_TOKEN (integration secret). Stdout = one JSON line per page:
+{"uri": "notion://<page-id>", "title": <page title>, "text": <markdown-ish body>}.
+Stdlib only; no dependencies. Community adapters follow this shape.
+
+Text only, deliberately: Notion-hosted files/images carry signed URLs that
+expire within an hour, so they are not stable corpus assets.
+"""
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+API = "https://api.notion.com/v1"
+VERSION = "2022-06-28"
+RATE_DELAY = 0.34          # Notion allows 3 requests/second
+MAX_DEPTH = 8              # toggles nest; deeper than this is noise
+SKIP_BLOCK_TYPES = {       # never text; never try to decode them
+    "image", "video", "file", "pdf", "audio", "bookmark", "embed",
+    "breadcrumb", "table_of_contents", "unsupported", "synced_block",
+}
+
+
+def get(path, token, params=None, payload=None):
+    url = API + path + (("?" + urllib.parse.urlencode(params)) if params else "")
+    data = json.dumps(payload).encode() if payload is not None else None
+    req = urllib.request.Request(url, data=data, headers={
+        "Authorization": "Bearer " + token,
+        "Notion-Version": VERSION,
+        "Content-Type": "application/json",
+    }, method="POST" if data else "GET")
+    time.sleep(RATE_DELAY)
+    return json.load(urllib.request.urlopen(req, timeout=45))
+
+
+def rich_text(block_type_obj):
+    return "".join(t.get("plain_text", "") for t in block_type_obj.get("rich_text", []))
+
+
+def block_lines(b, depth, token):
+    """One block -> (markdown lines, child block id to recurse into or None)."""
+    typ = b.get("type", "")
+    if typ in SKIP_BLOCK_TYPES:
+        return [], None
+    body = b.get(typ) or {}
+    text = rich_text(body)
+    prefix = {
+        "paragraph": "", "heading_1": "# ", "heading_2": "## ", "heading_3": "### ",
+        "bulleted_list_item": "- ", "numbered_list_item": "1. ",
+        "quote": "> ", "toggle": "",
+    }.get(typ)
+    if typ == "to_do":
+        return [("- [x] " if body.get("checked") else "- [ ] ") + text], b["id"] if b.get("has_children") else None
+    if typ == "code":
+        return ["```" + (body.get("language") or ""), text, "```"], None
+    if typ == "divider":
+        return ["---"], None
+    if typ == "table_row":
+        return [" | ".join("".join(t.get("plain_text", "") for t in cell) for cell in body.get("cells", []))], None
+    if typ in ("child_page", "child_database"):
+        return ["# " + (body.get("title") or "(untitled)")], None
+    if typ == "callout":
+        return ["> " + text], b["id"] if b.get("has_children") else None
+    if prefix is not None:
+        return [prefix + text] if text else [], b["id"] if b.get("has_children") else None
+    return [], None  # unknown type: ignore rather than fail the whole page
+
+
+def page_text(page_id, token, depth=0):
+    """All blocks under a page/block, flattened to markdown lines."""
+    if depth > MAX_DEPTH:
+        return []
+    lines, cursor = [], None
+    while True:
+        params = {"page_size": 100}
+        if cursor:
+            params["start_cursor"] = cursor
+        resp = get(f"/blocks/{page_id}/children", token, params)
+        for b in resp.get("results", []):
+            sub, child = block_lines(b, depth, token)
+            lines.extend(sub)
+            if child:
+                lines.extend(page_text(child, token, depth + 1))
+        if not resp.get("has_more"):
+            break
+        cursor = resp.get("next_cursor")
+    return lines
+
+
+def page_title(page):
+    for prop in (page.get("properties") or {}).values():
+        if prop.get("type") == "title":
+            # Title properties key the array "title", not "rich_text".
+            return "".join(t.get("plain_text", "") for t in prop.get("title", [])).strip() or "(untitled)"
+    return "(untitled)"
+
+
+def emit_page(page, token):
+    title = page_title(page)
+    lines = page_text(page["id"], token)
+    text = "# " + title + "\n\n" + "\n".join(lines).strip()
+    if text.strip():
+        print(json.dumps({"uri": "notion://" + page["id"], "title": title, "text": text},
+                         ensure_ascii=False))
+        return 1
+    return 0
+
+
+def main():
+    if len(sys.argv) != 3 or sys.argv[1] != "fetch":
+        print("usage: notion fetch <page-or-database-id>  (e.g. notion://0123abcd...)", file=sys.stderr)
+        return 2
+    token = os.environ.get("NOTION_TOKEN", "").strip()
+    if not token:
+        print("set NOTION_TOKEN in the server environment (a Notion integration secret)",
+              file=sys.stderr)
+        return 1
+    target = sys.argv[2].strip().replace("-", "")
+    try:
+        total = 0
+        cursor = None
+        try:
+            # A database query 404s for a plain page id — that is the disambiguation.
+            while True:
+                payload = {"page_size": 100}
+                if cursor:
+                    payload["start_cursor"] = cursor
+                resp = get(f"/databases/{target}/query", token, payload=payload)
+                for page in resp.get("results", []):
+                    total += emit_page(page, token)
+                if not resp.get("has_more"):
+                    break
+                cursor = resp.get("next_cursor")
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+            total += emit_page(get(f"/pages/{target}", token), token)
+    except urllib.error.HTTPError as e:
+        print(f"notion API HTTP {e.code}: {e.read()[:200].decode(errors='replace')}", file=sys.stderr)
+        return 1
+    except Exception as e:  # URLError, timeout, json decode — one clear error, not a traceback
+        print(f"notion fetch failed: {e}", file=sys.stderr)
+        return 1
+    print(f"emitted {total} pages", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -2,8 +2,8 @@
 
 The v1 client spawns this process per session and injects PLUGIN_ROOT/PLUGIN_DATA;
 tools dispatch into the same core tool functions the native plugin toolset registers.
-Keyless except the optional Raindrop adapter, which reads RAINDROP_API_TOKEN
-from the environment the client injects.
+Keyless except the optional Raindrop and Notion adapters, which read
+RAINDROP_API_TOKEN / NOTION_TOKEN from the environment the client injects.
 """
 import json
 import os

@@ -183,13 +183,13 @@ Everything is optional and set through the environment:
 - `mediarag-config.yaml` — named corpus config in the plugin dir (`root:` key); wins over env and the default (see `mediarag-config.example.yaml`)
 - `MEDIARAG_ROOT` — corpus root (default: `~/.mediarag`)
 - `MEDIARAG_ALLOW_PRIVATE_URLS=1` — let `add_source` fetch loopback/private-network URLs (standalone; inside Hermes the host's `security.allow_private_urls` applies). Link-local and cloud-metadata addresses are always refused.
-- `RAINDROP_API_TOKEN`, `PCLOUD_MOUNT`, `OBSIDIAN_VAULT` — adapter inputs
+- `RAINDROP_API_TOKEN`, `NOTION_TOKEN`, `PCLOUD_MOUNT`, `OBSIDIAN_VAULT` — adapter inputs
 
 ## Adapters
 
 `add_source` accepts public `http(s)://` URLs (fetched with curl, capped at 256MB;
 every redirect hop is checked and loopback/private/link-local/metadata hosts are refused)
-and source-scheme URIs (`<scheme>://...`) handled by adapters. Five ship in the
+and source-scheme URIs (`<scheme>://...`) handled by adapters. Six ship in the
 box:
 
 - `dropbox://` — Dropbox through the desktop client's local folder, or any mirror
@@ -200,6 +200,9 @@ box:
 - `obsidian://` — an Obsidian vault; skips `.obsidian/`, `.trash/`, `.git/`.
 - `raindrop://` — Raindrop.io bookmarks through the REST API
   (`RAINDROP_API_TOKEN` env).
+- `notion://<page-or-database-id>` — Notion pages through the REST API
+  (`NOTION_TOKEN` env, an integration secret). Text only: Notion-hosted files
+  carry signed URLs that expire within an hour, so they are not indexed.
 
 To write your own adapter, drop an executable at `sources.d/<scheme>` under the
 configured corpus root (`mediarag-config.yaml` / `MEDIARAG_ROOT` / `~/.mediarag`; a
