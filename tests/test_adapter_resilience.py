@@ -56,6 +56,22 @@ try:
     c.close()
     check("adapter stderr rides along", any("syncing" in ln for ln in res["adapter_log"]), res)
 
+    # A NON-ZERO EXIT gets the same salvage: complete items are kept and the
+    # failure is reported, instead of every emitted item being thrown away.
+    def failing_run(cmd, **kw):
+        return subprocess.CompletedProcess(cmd, 1, stdout=payload, stderr=b"rate limited at item 900")
+
+    tools.subprocess.run = failing_run
+    res = tools.run_adapter_sink("fake://lib", root)
+    check("non-zero exit is reported", res.get("code") == "adapter_error", res)
+    check("non-zero exit is marked partial", res.get("partial") is True, res)
+    check("non-zero exit still ingests complete items", res["added"] > 0, res)
+    check("non-zero exit keeps the stderr tail", "rate limited" in res.get("stderr", ""), res)
+    c = store.connect(root)
+    n = c.execute("SELECT COUNT(*) FROM assets WHERE uri LIKE 'fake://%'").fetchone()[0]
+    check("non-zero exit rows persisted", n > 0, n)
+    c.close()
+
     # A failing secret scope must fail closed with a clear error, not run the
     # adapter unauthenticated — and must not affect schemes without a token.
     agent = types.ModuleType("agent")

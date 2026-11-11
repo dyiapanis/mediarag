@@ -154,6 +154,12 @@ _CONTENT_EXT = {
     "audio/mpeg": ".mp3",
     "audio/wav": ".wav",
     "audio/x-wav": ".wav",
+    "audio/flac": ".flac",
+    "audio/mp4": ".m4a",
+    "audio/x-m4a": ".m4a",
+    "audio/ogg": ".ogg",
+    "application/ogg": ".ogg",
+    "audio/aac": ".aac",
 }
 
 
@@ -220,6 +226,7 @@ def run_adapter_sink(source: str, root: str) -> dict:
     except SecretScopeError as ex:
         return {"code": "secret_error", "scheme": scheme, "detail": str(ex)[:300]}
     timed_out = False
+    failed = False
     try:
         r = subprocess.run(cmd, capture_output=True, timeout=1800, env=env)
     except subprocess.TimeoutExpired as ex:
@@ -231,8 +238,9 @@ def run_adapter_sink(source: str, root: str) -> dict:
     except OSError as ex:                      # unreadable/removed adapter file
         return {"code": "adapter_error", "scheme": scheme, "stderr": str(ex)[-300:]}
     else:
-        if r.returncode != 0:
-            return {"code": "adapter_error", "scheme": scheme, "stderr": r.stderr.decode()[-300:]}
+        # Same salvage contract as the timeout path: complete items already
+        # emitted are still ingested; the non-zero exit is reported afterwards.
+        failed = r.returncode != 0
         stdout_b, stderr_b = r.stdout, r.stderr
     from .engine import embed_doc
     import json as _json
@@ -280,6 +288,10 @@ def run_adapter_sink(source: str, root: str) -> dict:
     if timed_out:
         result.update({"code": "adapter_timeout", "partial": True,
                        "detail": "adapter hit the 1800s cap; complete items ingested"})
+    elif failed:
+        result.update({"code": "adapter_error", "scheme": scheme, "partial": True,
+                       "detail": "adapter exited non-zero; complete items ingested",
+                       "stderr": stderr_b.decode()[-300:]})
     return result
 
 

@@ -109,23 +109,29 @@ def _unlock(fh):
 
 
 def _swap_dir(tmp: str, dst: str) -> None:
-    """Swap the freshly built tree into place without a delete-then-rename gap.
+    """Promote the freshly built tree, restoring the old one if promotion fails.
 
-    rename(dst -> old) and rename(tmp -> dst) are both atomic, so a concurrent
-    reader either sees the old tree or the new one, never an empty directory.
-    The old tree is removed afterwards; open file handles keep working on POSIX.
+    There is no cross-platform atomic directory swap: rename(dst -> old) and
+    rename(tmp -> dst) are individually atomic but the pair is not, so the real
+    guarantee is rollback-on-failure, not reader-side atomicity. If the second
+    rename fails the old tree is put back before the error surfaces — a failed
+    promotion must never leave the corpus with no destination at all.
     """
     import time
     old = dst + ".old"
     shutil.rmtree(old, ignore_errors=True)
     for attempt in range(20):
+        moved_old = False
         try:
             if os.path.isdir(dst):
                 os.rename(dst, old)
+                moved_old = True
             os.rename(tmp, dst)
             shutil.rmtree(old, ignore_errors=True)
             return
         except OSError:
+            if moved_old and not os.path.isdir(dst) and os.path.isdir(old):
+                os.rename(old, dst)  # roll back: the last good tree stays available
             # Windows refuses to rename a directory with open handles; give any
             # concurrent reader a moment to close them rather than corrupting.
             if attempt == 19:

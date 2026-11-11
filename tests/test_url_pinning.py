@@ -99,4 +99,75 @@ finally:
     urlsafe._host_is_safe_url = real_host_check
     os.environ.pop("MEDIARAG_ALLOW_PRIVATE_URLS", None)
 
+# --- malformed port is a structured refusal, not an uncaught ValueError ------
+urlsafe._host_is_safe_url = lambda: None
+pin, why = urlsafe.resolve_for_fetch("http://example.com:bad/")
+check("malformed port refused cleanly", pin is None and why == "unparseable port in URL", why)
+
+# --- every audio type we map must be one the indexer actually accepts --------
+from core import ingest as _ing  # noqa: E402
+
+for ctype, ext in tools._CONTENT_EXT.items():
+    if ctype.startswith("audio/") or ctype == "application/ogg":
+        check(f"{ctype} maps to an ingestible extension",
+              _ing.kind_of("download" + ext) is not None, (ctype, ext))
+
+# --- REAL curl: a dotted hostname must not escape the pin --------------------
+# The pin used to be keyed on the dot-stripped host while curl still received the
+# dotted URL, so curl ignored the pin and re-resolved. These two tests use a real
+# loopback HTTP server: the pin points at 127.0.0.2 (nothing listens there) while
+# the real server sits on 127.0.0.1. Any successful fetch would mean the pin lost.
+if shutil.which("curl"):
+    import http.server
+    import threading
+
+    hits = {"secret": 0}
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/start":
+                self.send_response(302)
+                self.send_header("Location", f"http://localhost.:{port}/secret.txt")
+                self.end_headers()
+            elif self.path == "/secret.txt":
+                hits["secret"] += 1
+                body = b"secret"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    port = srv.server_address[1]
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+    def split_dns(host, port, *rest):
+        ip = "127.0.0.1" if host.startswith("example.com") else "127.0.0.2"
+        return [(2, 1, 6, "", (ip, 0))]
+
+    try:
+        os.environ["MEDIARAG_ALLOW_PRIVATE_URLS"] = "1"  # loopback allowed, so the test is about pinning
+        urlsafe.socket.getaddrinfo = split_dns
+        res = tools.fetch_url(f"http://localhost.:{port}/secret.txt")
+        check("dotted host cannot escape the pin", res["code"] != "ok", res)
+        check("direct dotted fetch never reached the server", hits["secret"] == 0, hits)
+
+        res = tools.fetch_url(f"http://example.com:{port}/start")
+        check("dotted redirect target is refused too", res["code"] != "ok", res)
+        check("redirect never reached the secret", hits["secret"] == 0, hits)
+    finally:
+        srv.shutdown()
+        srv.server_close()
+        urlsafe.socket.getaddrinfo = real_getaddrinfo
+        os.environ.pop("MEDIARAG_ALLOW_PRIVATE_URLS", None)
+else:
+    print("SKIP real-curl dotted-host checks (curl not installed)")
+
 print("\nALL URL PINNING CHECKS PASS")

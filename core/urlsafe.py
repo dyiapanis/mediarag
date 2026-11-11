@@ -99,8 +99,14 @@ def resolve_for_fetch(url: str) -> tuple[Optional[str], Optional[str]]:
     if not ips:
         return None, "no usable resolved address"
     parts = urlsplit(url)
-    host = (parts.hostname or "").rstrip(".").lower()
-    port = parts.port or (443 if parts.scheme.lower() == "https" else 80)
+    # The --resolve key must match the host EXACTLY as it appears in the URL.
+    # urlsplit lowercases .hostname but keeps a trailing dot; stripping that dot
+    # here meant curl never applied the pin to `host.` URLs and re-resolved them.
+    host = parts.hostname or ""
+    try:
+        port = parts.port or (443 if parts.scheme.lower() == "https" else 80)
+    except ValueError:
+        return None, "unparseable port in URL"
     ip = ips[0]
     literal = f"[{ip}]" if ":" in ip else ip  # IPv6 needs brackets in --resolve
     return f"{host}:{port}:{literal}", None
