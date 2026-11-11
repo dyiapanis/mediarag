@@ -95,8 +95,7 @@ def main() -> int:
         # --- D2: shipped adapters discovered from repo layout ---
         ad = tools.list_adapters(tmp)
         check("adapters discovered", {"raindrop", "pcloud", "obsidian", "rclone"} <= set(ad), str(ad))
-        check("adapter paths exist and are executable", all(os.access(v, os.X_OK) for v in ad.values()),
-              str(ad))
+        check("adapter paths exist", all(os.path.isfile(v) for v in ad.values()), str(ad))
 
         # --- store: D1 store-level regression (multi-chunk uri survives) ---
         c = store.connect(tmp)

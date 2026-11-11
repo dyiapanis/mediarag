@@ -133,4 +133,28 @@ check("scheme registered", "notion" in tools.list_adapters("/tmp/corpus"))
 check("env forwards NOTION_TOKEN", tools._adapter_env().get("NOTION_TOKEN") == "tok2")
 os.environ.pop("NOTION_TOKEN", None)
 
+# --- containers must recurse, and properties must be emitted ---------------
+for typ in ("table", "column_list", "column"):
+    b = {"id": "c1", "type": typ, "has_children": True, typ: {}}
+    _, child = n.block_lines(b, 0, "tok")
+    check(f"{typ} recurses into children", child == "c1", child)
+
+page = {"id": "px", "properties": {
+    "Name": {"type": "title", "title": rt("Task")},
+    "Status": {"type": "status", "status": {"name": "Blocked"}},
+    "Owner": {"type": "people", "people": [{"name": "Ada"}]},
+    "Tags": {"type": "multi_select", "multi_select": [{"name": "infra"}, {"name": "search"}]},
+    "Notes": {"type": "rich_text", "rich_text": rt("quokka migration body")},
+    "Due": {"type": "date", "date": {"start": "2026-11-12", "end": None}},
+    "Done": {"type": "checkbox", "checkbox": False},
+}}
+props = n.page_properties(page)
+joined = "\n".join(props)
+check("status property", "Status: Blocked" in joined, joined)
+check("people property", "Owner: Ada" in joined, joined)
+check("multi_select property", "Tags: infra, search" in joined, joined)
+check("rich_text property", "Notes: quokka migration body" in joined, joined)
+check("date property", "Due: 2026-11-12" in joined, joined)
+check("checkbox property", "Done: no" in joined, joined)
+
 print("\nALL NOTION ADAPTER CHECKS PASS")
