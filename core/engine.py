@@ -9,7 +9,6 @@ enable_mem_pattern=False (12 GB + 27 GB swap observed without it).
 """
 from __future__ import annotations
 
-import glob
 import os
 import shutil
 import sys
@@ -29,7 +28,6 @@ from PIL import Image  # noqa: E402
 
 QUERY_PREFIX = "task: search result | query: "
 DOC_PREFIX = "title: none | text: "
-REPO = "onnx-community/embeddinggemma-2-ONNX"
 MODEL_FILES = {
     "trunk": "model_q4.onnx",
     "vision": "vision_encoder_q4.onnx",
@@ -130,15 +128,18 @@ def _snapshot_dir() -> str:
     a cache populated by ``snapshot_download(revision=<sha>)`` has no ``refs/main``
     (see scripts/fetch_model.py), and hub resolution then fails even though every
     file is present. Passing this path keeps a cold bootstrap working.
+
+    The revision is exact, not "newest directory": a second snapshot in the same
+    cache must never silently change the embeddings we ship.
     """
-    hits = glob.glob(os.path.join(
-        _hub_cache(), "models--onnx-community--embeddinggemma-2-ONNX", "snapshots", "*", "onnx"))
-    if not hits:
-        raise RuntimeError(
-            "embedding model not downloaded — snapshot_download "
-            "onnx-community/embeddinggemma-2-ONNX (onnx/*_q4.onnx + *_q4.onnx_data)"
-        )
-    return os.path.dirname(sorted(hits)[-1])
+    from .model_pin import CACHE_DIRNAME, REVISION
+    pinned = os.path.join(_hub_cache(), CACHE_DIRNAME, "snapshots", REVISION, "onnx")
+    if os.path.isdir(pinned):
+        return os.path.dirname(pinned)
+    raise RuntimeError(
+        f"pinned embedding snapshot {REVISION} not found in {_hub_cache()}/{CACHE_DIRNAME} — "
+        "run: python scripts/fetch_model.py"
+    )
 
 
 def snap_dir() -> str:

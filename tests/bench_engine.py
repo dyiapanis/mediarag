@@ -11,7 +11,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import mediarag.engine as eng  # noqa: E402
+from core import engine as eng  # noqa: E402
 
 GOLD = os.path.join(os.path.dirname(__file__), "fixtures", "golden.json")
 
