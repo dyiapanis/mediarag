@@ -8,7 +8,7 @@ import sys
 from . import ingest as ing
 from . import store
 from . import search as se
-from .urlsafe import url_problem
+from .urlsafe import resolve_for_fetch, url_problem  # noqa: F401  (url_problem re-exported for callers)
 
 _PKG_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -118,12 +118,13 @@ def fetch_url(url: str) -> dict:
     os.makedirs(os.path.dirname(out), exist_ok=True)
     target = url
     for _hop in range(_MAX_REDIRECTS + 1):
-        why = url_problem(target)
-        if why:
-            return {"code": "blocked_url", "url": target, "detail": why}
+        pin, why = resolve_for_fetch(target)
+        if why or not pin:
+            return {"code": "blocked_url", "url": target, "detail": why or "no usable address"}
         r = subprocess.run(
             ["curl", "-fsS", "--proto", "=http,https", "--max-time", "120",
              "--max-filesize", "268435456", "-w", "%{http_code} %{redirect_url}",
+             "--resolve", pin,
              "-o", out, target],
             capture_output=True, timeout=130,
         )

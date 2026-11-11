@@ -46,6 +46,8 @@ jobs:
         run: python tests/test_notion_adapter.py
       - name: Adapter text sink units (offline)
         run: python tests/test_adapter_sink_text.py
+      - name: URL fetch pinning (offline)
+        run: python tests/test_url_pinning.py
       - name: End-to-end smoke (ingest → embed → search → thumbnail)
         run: python tests/test_smoke_e2e.py
       - name: Config root resolution
@@ -90,6 +92,8 @@ jobs:
         run: python tests/test_notion_adapter.py
       - name: Adapter text sink units (offline)
         run: python tests/test_adapter_sink_text.py
+      - name: URL fetch pinning (offline)
+        run: python tests/test_url_pinning.py
       - name: End-to-end smoke (ingest → embed → search → thumbnail)
         run: python tests/test_smoke_e2e.py
 
@@ -135,5 +139,7 @@ jobs:
         run: python tests/test_notion_adapter.py
       - name: Adapter text sink units (offline)
         run: python tests/test_adapter_sink_text.py
+      - name: URL fetch pinning (offline)
+        run: python tests/test_url_pinning.py
       - name: End-to-end smoke (ingest → embed → search → thumbnail)
         run: python tests/test_smoke_e2e.py
