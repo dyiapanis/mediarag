@@ -44,6 +44,8 @@ jobs:
         run: python tests/test_parity_slices.py
       - name: Snapshot pin units (offline)
         run: python tests/test_snapshot_pin.py
+      - name: Materialize race (two processes)
+        run: python tests/test_materialize_race.py
       - name: Golden parity (engine vs pinned goldens)
         run: python tests/bench_engine.py
       - name: Notion adapter units (offline, no token)
@@ -88,6 +90,8 @@ jobs:
         run: python tests/test_engine_deref.py
       - name: Snapshot pin units (offline)
         run: python tests/test_snapshot_pin.py
+      - name: Materialize race (two processes)
+        run: python tests/test_materialize_race.py
       - name: Contract suite (paths, adapters, store, tool contract)
         run: python tests/test_contract.py
       - name: Config root resolution
@@ -137,6 +141,8 @@ jobs:
         run: python tests/test_engine_deref.py
       - name: Snapshot pin units (offline)
         run: python tests/test_snapshot_pin.py
+      - name: Materialize race (two processes)
+        run: python tests/test_materialize_race.py
       - name: Contract suite (paths, adapters, store, tool contract)
         run: python tests/test_contract.py
       - name: Config root resolution
