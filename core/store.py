@@ -42,6 +42,19 @@ def _migrate(c: sqlite3.Connection) -> None:
         c.execute("DROP INDEX IF EXISTS assets_agent")  # index must go before the column
         c.execute("ALTER TABLE assets DROP COLUMN agent")
         c.commit()
+    # CREATE VIRTUAL TABLE IF NOT EXISTS keeps an older kw_fts shape forever, so a
+    # corpus built before span_start existed would fail every insert and every
+    # keyword search. kw_fts is only a mirror of assets — rebuild it in place.
+    fts_cols = [r[1] for r in c.execute("PRAGMA table_info(kw_fts)")]
+    if fts_cols and fts_cols != ["uri", "span_start", "text"]:
+        c.execute("DROP TABLE kw_fts")
+        c.execute("CREATE VIRTUAL TABLE kw_fts USING fts5(uri UNINDEXED, span_start UNINDEXED, text)")
+        rows = c.execute("SELECT uri, span_start, snippet FROM assets").fetchall()
+        c.executemany(
+            "INSERT INTO kw_fts(uri, span_start, text) VALUES(?,?,?)",
+            [(u, s, _fts_text(snip, u, is_label=s < 0)) for u, s, snip in rows],
+        )
+        c.commit()
 
 
 def db_path(root: str) -> str:
