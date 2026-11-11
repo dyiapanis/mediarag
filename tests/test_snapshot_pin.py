@@ -50,4 +50,23 @@ finally:
         os.environ["HF_HUB_CACHE"] = old
     shutil.rmtree(tmp, ignore_errors=True)
 
+# $VAR forms must resolve the way huggingface_hub resolves them
+saved = {k: os.environ.get(k) for k in ("HF_HUB_CACHE", "HF_HOME", "MEDIARAG_TEST_BASE")}
+try:
+    os.environ["MEDIARAG_TEST_BASE"] = "/opt/models"
+    os.environ["HF_HUB_CACHE"] = "$MEDIARAG_TEST_BASE/hub"
+    os.environ.pop("HF_HOME", None)
+    check("HF_HUB_CACHE expands $VAR", engine._hub_cache() == "/opt/models/hub",
+          engine._hub_cache())
+    os.environ.pop("HF_HUB_CACHE", None)
+    os.environ["HF_HOME"] = "$MEDIARAG_TEST_BASE/hf"
+    check("HF_HOME expands $VAR", engine._hub_cache() == "/opt/models/hf/hub",
+          engine._hub_cache())
+finally:
+    for k, v in saved.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+
 print("\nALL SNAPSHOT PIN CHECKS PASS")
