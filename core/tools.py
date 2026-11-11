@@ -152,26 +152,27 @@ def _fn_from_url(url: str) -> str:
     return f"{hashlib.sha1(url.encode()).hexdigest()[:10]}-{tail}"
 
 
-def _raindrop_token() -> str | None:
+def _secret(name: str) -> str | None:
     """Hermes path uses secret_scope (fail closed). Standalone MCP has no agent
     package, so the client-injected env is the token."""
     try:
         from agent.secret_scope import get_secret
     except ImportError:
-        return os.environ.get("RAINDROP_API_TOKEN") or None
+        return os.environ.get(name) or None
     try:
-        return get_secret("RAINDROP_API_TOKEN") or None
+        return get_secret(name) or None
     except Exception:
         return None
 
 
 def _adapter_env() -> dict:
     env = os.environ.copy()
-    tok = _raindrop_token()
-    if tok:
-        env["RAINDROP_API_TOKEN"] = tok
-    else:
-        env.pop("RAINDROP_API_TOKEN", None)
+    for name in ("RAINDROP_API_TOKEN", "NOTION_TOKEN"):
+        tok = _secret(name)
+        if tok:
+            env[name] = tok
+        else:
+            env.pop(name, None)
     return env
 
 
