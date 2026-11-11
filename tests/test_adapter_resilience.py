@@ -58,18 +58,25 @@ try:
 
     # A NON-ZERO EXIT gets the same salvage: complete items are kept and the
     # failure is reported, instead of every emitted item being thrown away.
+    # Distinct URIs + exact counts, so this cannot pass on the timeout case's rows.
+    exit_payload = b"\n".join([
+        json.dumps({"uri": "fake://exit/a", "title": "a", "text": "marmalade lanterns " * 20}).encode(),
+        json.dumps({"uri": "fake://exit/b", "title": "b", "text": "second document body " * 20}).encode(),
+        b"not json at all",
+    ])
+
     def failing_run(cmd, **kw):
-        return subprocess.CompletedProcess(cmd, 1, stdout=payload, stderr=b"rate limited at item 900")
+        return subprocess.CompletedProcess(cmd, 1, stdout=exit_payload, stderr=b"rate limited at item 900")
 
     tools.subprocess.run = failing_run
-    res = tools.run_adapter_sink("fake://lib", root)
+    res = tools.run_adapter_sink("fake://exit", root)
     check("non-zero exit is reported", res.get("code") == "adapter_error", res)
     check("non-zero exit is marked partial", res.get("partial") is True, res)
-    check("non-zero exit still ingests complete items", res["added"] > 0, res)
+    check("non-zero exit still ingests complete items", res["added"] == 2, res)
     check("non-zero exit keeps the stderr tail", "rate limited" in res.get("stderr", ""), res)
     c = store.connect(root)
-    n = c.execute("SELECT COUNT(*) FROM assets WHERE uri LIKE 'fake://%'").fetchone()[0]
-    check("non-zero exit rows persisted", n > 0, n)
+    n = c.execute("SELECT COUNT(*) FROM assets WHERE uri LIKE 'fake://exit/%'").fetchone()[0]
+    check("non-zero exit rows persisted (exact)", n == 2 and n == res["added"], (n, res["added"]))
     c.close()
 
     # A failing secret scope must fail closed with a clear error, not run the

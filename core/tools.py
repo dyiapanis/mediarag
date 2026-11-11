@@ -118,7 +118,7 @@ def fetch_url(url: str) -> dict:
         )
         if r.returncode != 0:
             return {"code": "fetch_error", "url": target, "detail": r.stderr.decode()[-200:]}
-        status, _, rest = r.stdout.decode().strip().partition("\t")
+        status, _, rest = r.stdout.decode(errors="replace").strip().partition("\t")
         nxt, _, ctype = rest.partition("\t")
         if not (status.startswith("3") and nxt):
             break

@@ -40,6 +40,12 @@ def _ip_problem(ip, allow_private: bool) -> Optional[str]:
     return None
 
 
+# Hostnames we are willing to pin: ASCII letters, digits, label separators and
+# the colon of an IPv6 literal. curl punycodes everything else, which would make
+# the --resolve key unmatchable (see _resolve's non-ASCII refusal).
+URLSAFE_HOST_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789.-:")
+
+
 def _resolve(url: str) -> tuple[list[str], Optional[str]]:
     """Validate the URL and return the IPs we are willing to connect to.
 
@@ -52,6 +58,11 @@ def _resolve(url: str) -> tuple[list[str], Optional[str]]:
         host = (parts.hostname or "").rstrip(".").lower()
     except ValueError:
         return [], "unparseable URL"
+    if any(ch not in URLSAFE_HOST_CHARS for ch in host):
+        # curl canonicalises non-ASCII hosts to punycode, so a Unicode --resolve
+        # key can never match. Until we canonicalise the exact way curl does,
+        # IDN URLs must be refused — a pin that cannot match is no pin at all.
+        return [], "non-ASCII hostnames are not supported"
     if parts.scheme.lower() not in ("http", "https"):
         return [], f"only http(s) URLs are allowed, got {parts.scheme or 'no scheme'!r}"
     if not host or "@" in parts.netloc:
