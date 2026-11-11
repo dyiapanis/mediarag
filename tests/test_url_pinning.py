@@ -104,6 +104,25 @@ urlsafe._host_is_safe_url = lambda: None
 pin, why = urlsafe.resolve_for_fetch("http://example.com:bad/")
 check("malformed port refused cleanly", pin is None and why == "unparseable port in URL", why)
 
+# --- corrupt (non-UTF-8) curl stdout must stay inside the structured contract -
+urlsafe._host_is_safe_url = lambda: None
+urlsafe.socket.getaddrinfo = stub_dns("93.184.216.34")
+
+
+def corrupt_run(cmd, **kw):
+    # -w output carrying raw bytes that are not valid UTF-8 after the first tab
+    return subprocess.CompletedProcess(cmd, 0, stdout=b"302\thttp://h\xffc/\ttext/html", stderr=b"")
+
+
+real_run = tools.subprocess.run
+tools.subprocess.run = corrupt_run
+try:
+    res = tools.fetch_url("https://example.com/corrupt")
+    check("non-UTF-8 redirect stays structured", res.get("code") == "blocked_url", res)
+finally:
+    tools.subprocess.run = real_run
+    urlsafe.socket.getaddrinfo = real_getaddrinfo
+
 # --- every audio type we map must be one the indexer actually accepts --------
 from core import ingest as _ing  # noqa: E402
 
@@ -128,6 +147,12 @@ if shutil.which("curl"):
             if self.path == "/start":
                 self.send_response(302)
                 self.send_header("Location", f"http://localhost.:{port}/secret.txt")
+                self.end_headers()
+            elif self.path == "/start-puny":
+                # Punycode form of the IDN: ASCII, so validation resolves it and
+                # the pin must MATCH curl's canonical spelling of this very host.
+                self.send_response(302)
+                self.send_header("Location", f"http://xn--9ca.localtest.me:{port}/secret.txt")
                 self.end_headers()
             elif self.path == "/secret.txt":
                 hits["secret"] += 1
@@ -162,6 +187,17 @@ if shutil.which("curl"):
         res = tools.fetch_url(f"http://example.com:{port}/start")
         check("dotted redirect target is refused too", res["code"] != "ok", res)
         check("redirect never reached the secret", hits["secret"] == 0, hits)
+
+        # IDN: a Unicode hostname is refused outright (curl would punycode it and
+        # the pin could never match), so curl never runs and nothing is fetched.
+        res = tools.fetch_url(f"http://é.localtest.me:{port}/secret.txt")
+        check("IDN hostname refused", res["code"] == "blocked_url" and "non-ASCII" in str(res), res)
+        check("IDN fetch never reached the server", hits["secret"] == 0, hits)
+
+        # An already-punycode redirect must still be pinned to our address.
+        res = tools.fetch_url(f"http://example.com:{port}/start-puny")
+        check("punycode redirect target does not reach the secret either",
+              res["code"] != "ok" and hits["secret"] == 0, (res, hits))
     finally:
         srv.shutdown()
         srv.server_close()
