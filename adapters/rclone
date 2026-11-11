@@ -36,7 +36,13 @@ def main():
     remote_path = "/" + remote_path.lstrip("/")
     cache = os.environ.get("RCLONE_ADAPTER_CACHE",
                            os.path.expanduser("~/.cache/mediarag/rclone"))
-    dest = os.path.join(cache, remote, remote_path.lstrip("/"))
+    # Containment, not just the remote name: "../" segments (and Windows
+    # backslashes) must not let remote_path escape the per-remote cache dir.
+    base = os.path.realpath(os.path.join(cache, remote))
+    dest = os.path.realpath(os.path.join(base, remote_path.replace("\\", "/").lstrip("/")))
+    if dest != base and os.path.commonpath([base, dest]) != base:
+        print(f"invalid remote path {remote_path!r}: escapes the cache directory", file=sys.stderr)
+        return 1
     os.makedirs(dest, exist_ok=True)
     # rclone copy: parallel, respects remotes' own config/env; exits non-zero on
     # partial failure with a summary on stderr.

@@ -66,6 +66,9 @@ def block_lines(b, depth, token):
         return ["# " + (body.get("title") or "(untitled)")], None
     if typ == "callout":
         return ["> " + text], b["id"] if b.get("has_children") else None
+    if typ in ("table", "column_list", "column"):
+        # Containers: no text of their own, but their children are the content.
+        return [], b["id"] if b.get("has_children") else None
     if prefix is not None:
         return [prefix + text] if text else [], b["id"] if b.get("has_children") else None
     return [], None  # unknown type: ignore rather than fail the whole page
@@ -100,9 +103,40 @@ def page_title(page):
     return "(untitled)"
 
 
+def page_properties(page):
+    """Non-title database properties as text lines — status/owner/dates are
+    content a user searches for, not metadata to discard."""
+    out = []
+    for key, prop in (page.get("properties") or {}).items():
+        typ = prop.get("type")
+        if typ == "title":
+            continue
+        value = None
+        if typ == "rich_text":
+            value = rich_text(prop)
+        elif typ in ("select", "status"):
+            value = (prop.get(typ) or {}).get("name")
+        elif typ == "multi_select":
+            value = ", ".join(o.get("name", "") for o in prop.get("multi_select", []))
+        elif typ == "date":
+            d = prop.get("date") or {}
+            value = d.get("start") + (" → " + d["end"] if d.get("end") else "") if d.get("start") else None
+        elif typ in ("url", "email", "phone_number"):
+            value = prop.get(typ)
+        elif typ == "number":
+            value = prop.get("number")
+        elif typ == "checkbox":
+            value = "yes" if prop.get("checkbox") else "no"
+        elif typ == "people":
+            value = ", ".join(p.get("name", "") for p in prop.get("people", []))
+        if value not in (None, "", []):
+            out.append(f"{key}: {value}")
+    return out
+
+
 def emit_page(page, token):
     title = page_title(page)
-    lines = page_text(page["id"], token)
+    lines = page_properties(page) + page_text(page["id"], token)
     text = "# " + title + "\n\n" + "\n".join(lines).strip()
     if text.strip():
         print(json.dumps({"uri": "notion://" + page["id"], "title": title, "text": text},

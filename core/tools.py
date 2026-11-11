@@ -210,11 +210,18 @@ def run_adapter_sink(source: str, root: str) -> dict:
             except ValueError:
                 continue
             if "text" in item:
-                v = embed_doc(item["text"])
-                row = {"uri": item["uri"], "kind": "text", "span_start": 0.0, "span_end": 0.0,
-                       "snippet": item.get("title", "") or item["text"][:200], "vec": v, "thumb": None}
-                store.upsert_uri(c, item["uri"], [row])
-                added += 1
+                # Chunk the body, not just embed it whole: a single row capped at
+                # 1024 tokens lost everything past the cap, and a title-only
+                # snippet left nothing for the keyword lane or the result view.
+                rows = []
+                for start, end, chunk in ing.text_chunks(item["text"]):
+                    rows.append({"uri": item["uri"], "kind": "text",
+                                 "span_start": start, "span_end": end,
+                                 "snippet": chunk, "vec": embed_doc(chunk), "thumb": None})
+                if not rows:
+                    continue
+                store.upsert_uri(c, item["uri"], rows)
+                added += len(rows)
             elif "path" in item:
                 if not os.path.exists(item["path"]):
                     skipped.append({"uri": item["uri"], "code": "missing_path",
