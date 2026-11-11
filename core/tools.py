@@ -118,8 +118,12 @@ def fetch_url(url: str) -> dict:
         )
         if r.returncode != 0:
             return {"code": "fetch_error", "url": target, "detail": r.stderr.decode()[-200:]}
-        status, _, rest = r.stdout.decode(errors="replace").strip().partition("\t")
-        nxt, _, ctype = rest.partition("\t")
+        # strip newlines only: str.strip() would delete the TRAILING TAB that
+        # separates an empty content_type, leaving rpartition nothing to split.
+        status, _, rest = r.stdout.decode(errors="replace").strip("\r\n").partition("\t")
+        # content_type is the LAST field: a raw tab inside redirect_url must stay
+        # part of the URL instead of truncating the redirect target.
+        nxt, _, ctype = rest.rpartition("\t")
         if not (status.startswith("3") and nxt):
             break
         target = nxt
