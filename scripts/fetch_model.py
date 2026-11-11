@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """One-time EG2 q4 download into the Hugging Face cache. About 480MB."""
+import os
+import sys
+
 from huggingface_hub import snapshot_download
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from core.model_pin import REPO, REVISION  # noqa: E402 — the pin lives with the engine
+
 snapshot_download(
-    "onnx-community/embeddinggemma-2-ONNX",
-    revision="daa72c51243991dfcaf9f9137d2c573d8f7790c0",  # pinned: the parity-locked snapshot
+    REPO,
+    revision=REVISION,  # pinned: the parity-locked snapshot
     allow_patterns=[
         "*.json",
         "chat_template.jinja",
