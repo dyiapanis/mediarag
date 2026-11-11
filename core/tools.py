@@ -111,14 +111,15 @@ def fetch_url(url: str) -> dict:
             return {"code": "blocked_url", "url": target, "detail": why or "no usable address"}
         r = subprocess.run(
             ["curl", "-fsS", "--proto", "=http,https", "--max-time", "120",
-             "--max-filesize", "268435456", "-w", "%{http_code} %{redirect_url}",
+             "--max-filesize", "268435456", "-w", "%{http_code}\t%{redirect_url}\t%{content_type}",
              "--resolve", pin,
              "-o", out, target],
             capture_output=True, timeout=130,
         )
         if r.returncode != 0:
             return {"code": "fetch_error", "url": target, "detail": r.stderr.decode()[-200:]}
-        status, _, nxt = r.stdout.decode().strip().partition(" ")
+        status, _, rest = r.stdout.decode().strip().partition("\t")
+        nxt, _, ctype = rest.partition("\t")
         if not (status.startswith("3") and nxt):
             break
         target = nxt
@@ -128,7 +129,32 @@ def fetch_url(url: str) -> dict:
     if size > 256 * 1024 * 1024:
         os.unlink(out)
         return {"code": "too_large", "url": url, "size": size}
+    if out.endswith(".bin"):
+        # Extensionless URL (/document, /download?id=…): the server told us what
+        # it sent, so name it by content type or ingest cannot sniff the format.
+        ext = _CONTENT_EXT.get(ctype.split(";")[0].strip().lower())
+        if ext:
+            renamed = out[:-4] + ext
+            os.replace(out, renamed)
+            out = renamed
     return {"code": "ok", "path": out, "size": size}
+
+
+_CONTENT_EXT = {
+    "text/plain": ".txt",
+    "text/markdown": ".md",
+    "text/x-markdown": ".md",
+    "text/html": ".html",
+    "application/pdf": ".pdf",
+    "application/json": ".json",
+    "text/csv": ".csv",
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "audio/mpeg": ".mp3",
+    "audio/wav": ".wav",
+    "audio/x-wav": ".wav",
+}
 
 
 def _fn_from_url(url: str) -> str:
@@ -141,6 +167,13 @@ def _fn_from_url(url: str) -> str:
     return f"{hashlib.sha1(url.encode()).hexdigest()[:10]}-{tail}"
 
 
+class SecretScopeError(RuntimeError):
+    """The Hermes secret scope was present but failed. Never fall back to raw env."""
+
+
+_SCHEME_SECRETS = {"raindrop": "RAINDROP_API_TOKEN", "notion": "NOTION_TOKEN"}
+
+
 def _secret(name: str) -> str | None:
     """Hermes path uses secret_scope (fail closed). Standalone MCP has no agent
     package, so the client-injected env is the token."""
@@ -150,18 +183,22 @@ def _secret(name: str) -> str | None:
         return os.environ.get(name) or None
     try:
         return get_secret(name) or None
-    except Exception:
-        return None
+    except Exception as ex:
+        # Silently returning None here ran the adapter unauthenticated and
+        # surfaced a confusing 401 instead of the real scope failure.
+        raise SecretScopeError(f"secret scope failed for {name}: {ex}") from ex
 
 
-def _adapter_env() -> dict:
+def _adapter_env(scheme: str) -> dict:
     env = os.environ.copy()
-    for name in ("RAINDROP_API_TOKEN", "NOTION_TOKEN"):
-        tok = _secret(name)
-        if tok:
-            env[name] = tok
-        else:
-            env.pop(name, None)
+    name = _SCHEME_SECRETS.get(scheme)
+    if name is None:
+        return env
+    tok = _secret(name)  # only the token this adapter actually needs
+    if tok:
+        env[name] = tok
+    else:
+        env.pop(name, None)
     return env
 
 
@@ -179,18 +216,31 @@ def run_adapter_sink(source: str, root: str) -> dict:
     cmd = [sys.executable, adapter, "fetch", rest]
     # stdout JSON lines: {"uri","title","text"} text items | {"uri","path"} file items
     try:
-        r = subprocess.run(cmd, capture_output=True, timeout=1800, env=_adapter_env())
+        env = _adapter_env(scheme)
+    except SecretScopeError as ex:
+        return {"code": "secret_error", "scheme": scheme, "detail": str(ex)[:300]}
+    timed_out = False
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=1800, env=env)
+    except subprocess.TimeoutExpired as ex:
+        # A long sync that hits the cap has already emitted complete items.
+        # Ingest those instead of throwing them away with the exception.
+        timed_out = True
+        stdout_b = ex.stdout or b""
+        stderr_b = ex.stderr or b""
     except OSError as ex:                      # unreadable/removed adapter file
         return {"code": "adapter_error", "scheme": scheme, "stderr": str(ex)[-300:]}
-    if r.returncode != 0:
-        return {"code": "adapter_error", "scheme": scheme, "stderr": r.stderr.decode()[-300:]}
+    else:
+        if r.returncode != 0:
+            return {"code": "adapter_error", "scheme": scheme, "stderr": r.stderr.decode()[-300:]}
+        stdout_b, stderr_b = r.stdout, r.stderr
     from .engine import embed_doc
     import json as _json
     added = 0
     skipped = []
     c = store.connect(root)
     try:
-        for line in r.stdout.decode().splitlines():
+        for line in stdout_b.decode().splitlines():
             line = line.strip()
             if not line:
                 continue
@@ -225,8 +275,12 @@ def run_adapter_sink(source: str, root: str) -> dict:
         c.close()
     # stderr is the adapter's progress channel, not a failure list: reporting it
     # as "skipped" turned every successful run into a fake skip entry.
-    return {"added": added, "skipped": skipped,
-            "adapter_log": [ln.strip()[:200] for ln in r.stderr.decode().splitlines() if ln.strip()]}
+    result = {"added": added, "skipped": skipped,
+              "adapter_log": [ln.strip()[:200] for ln in stderr_b.decode().splitlines() if ln.strip()]}
+    if timed_out:
+        result.update({"code": "adapter_timeout", "partial": True,
+                       "detail": "adapter hit the 1800s cap; complete items ingested"})
+    return result
 
 
 def _adapter_root() -> str:
