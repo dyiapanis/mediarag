@@ -77,17 +77,72 @@ def _fresh(dst: str, src: str) -> bool:
     return True
 
 
+def _lock(fh):
+    """Cross-platform exclusive lock on the materialize lockfile.
+
+    POSIX uses flock; Windows has no fcntl, so msvcrt.locking with retries.
+    Without this, two processes embedding at once could delete each other's
+    shards mid-read.
+    """
+    if fcntl is not None:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        return
+    import msvcrt
+    import time
+    fh.seek(0)
+    for _ in range(240):
+        try:
+            msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+            return
+        except OSError:
+            time.sleep(0.5)
+    raise TimeoutError("could not acquire the materialize lock")
+
+
+def _unlock(fh):
+    if fcntl is not None:
+        fcntl.flock(fh, fcntl.LOCK_UN)
+        return
+    import msvcrt
+    fh.seek(0)
+    msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+
+
+def _swap_dir(tmp: str, dst: str) -> None:
+    """Swap the freshly built tree into place without a delete-then-rename gap.
+
+    rename(dst -> old) and rename(tmp -> dst) are both atomic, so a concurrent
+    reader either sees the old tree or the new one, never an empty directory.
+    The old tree is removed afterwards; open file handles keep working on POSIX.
+    """
+    import time
+    old = dst + ".old"
+    shutil.rmtree(old, ignore_errors=True)
+    for attempt in range(20):
+        try:
+            if os.path.isdir(dst):
+                os.rename(dst, old)
+            os.rename(tmp, dst)
+            shutil.rmtree(old, ignore_errors=True)
+            return
+        except OSError:
+            # Windows refuses to rename a directory with open handles; give any
+            # concurrent reader a moment to close them rather than corrupting.
+            if attempt == 19:
+                raise
+            time.sleep(0.5)
+
+
 def _materialize(src: str, dest: str | None = None) -> str:
     """Copy the q4 towers to real files beside each other. ~480MB, once per snapshot.
-    ponytail: flock, not a lock manager. A crash mid-copy leaves a .tmp that the
+    ponytail: one lockfile, not a lock manager. A crash mid-copy leaves a .tmp that the
     next call deletes and rewrites.
     """
     dst = dest or _REAL
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     fh = open(dst + ".lock", "a")
     try:
-        if fcntl is not None:
-            fcntl.flock(fh, fcntl.LOCK_EX)
+        _lock(fh)
         if _fresh(dst, src):
             return dst
         tmp = dst + ".tmp"
@@ -100,13 +155,10 @@ def _materialize(src: str, dest: str | None = None) -> str:
                     shutil.copyfile(sp, os.path.join(tmp, fn))  # follows the symlink
         with open(os.path.join(tmp, ".src"), "w") as f:
             f.write(src)
-        if os.path.isdir(dst):
-            shutil.rmtree(dst)
-        os.rename(tmp, dst)
+        _swap_dir(tmp, dst)
         return dst
     finally:
-        if fcntl is not None:
-            fcntl.flock(fh, fcntl.LOCK_UN)
+        _unlock(fh)
         fh.close()
 
 
