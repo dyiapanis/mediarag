@@ -40,34 +40,67 @@ def _ip_problem(ip, allow_private: bool) -> Optional[str]:
     return None
 
 
-def url_problem(url: str) -> Optional[str]:
-    """None if `url` may be fetched, otherwise a short reason."""
+def _resolve(url: str) -> tuple[list[str], Optional[str]]:
+    """Validate the URL and return the IPs we are willing to connect to.
+
+    Resolution happens here exactly once, so the address that gets validated is
+    the address the fetch can later be pinned to. Returning the IPs alongside
+    the verdict is what closes the DNS-rebinding TOCTOU hole.
+    """
     try:
         parts = urlsplit((url or "").strip())
         host = (parts.hostname or "").rstrip(".").lower()
     except ValueError:
-        return "unparseable URL"
+        return [], "unparseable URL"
     if parts.scheme.lower() not in ("http", "https"):
-        return f"only http(s) URLs are allowed, got {parts.scheme or 'no scheme'!r}"
+        return [], f"only http(s) URLs are allowed, got {parts.scheme or 'no scheme'!r}"
     if not host or "@" in parts.netloc:
-        return "URL must have a plain host (no userinfo)"
+        return [], "URL must have a plain host (no userinfo)"
     if host in _METADATA_HOSTS:
-        return "cloud-metadata host"
+        return [], "cloud-metadata host"
     allow_private = os.environ.get("MEDIARAG_ALLOW_PRIVATE_URLS") == "1"
-    if not allow_private:
-        hermes_check = _host_is_safe_url()
-        if hermes_check is not None:
-            return None if hermes_check(url) else "blocked by Hermes URL safety policy"
+    hermes_check = None if allow_private else _host_is_safe_url()
+    if hermes_check is not None and not hermes_check(url):
+        return [], "blocked by Hermes URL safety policy"
     try:
         infos = socket.getaddrinfo(host, None)
     except (socket.gaierror, UnicodeError):
-        return f"could not resolve host {host!r}"
+        return [], f"could not resolve host {host!r}"
+    ips = []
     for info in infos:
         try:
             ip = ipaddress.ip_address(str(info[4][0]).split("%")[0])
         except ValueError:
-            return "unparseable resolved address"
-        why = _ip_problem(ip, allow_private)
-        if why:
-            return f"{host}: {why}"
-    return None
+            return [], "unparseable resolved address"
+        if hermes_check is None:
+            why = _ip_problem(ip, allow_private)
+            if why:
+                return [], f"{host}: {why}"
+        # When Hermes governs the policy we do not re-refuse on its behalf, but
+        # we still record the resolved address so the fetch can be pinned to it.
+        ips.append(str(ip))
+    return ips, None
+
+
+def url_problem(url: str) -> Optional[str]:
+    """None if `url` may be fetched, otherwise a short reason."""
+    return _resolve(url)[1]
+
+
+def resolve_for_fetch(url: str) -> tuple[Optional[str], Optional[str]]:
+    """A curl --resolve argument pinning the connection to the validated IP.
+
+    Without this, curl re-resolves the hostname itself and can be handed a
+    different address than the one that just passed validation (rebinding).
+    """
+    ips, problem = _resolve(url)
+    if problem:
+        return None, problem
+    if not ips:
+        return None, "no usable resolved address"
+    parts = urlsplit(url)
+    host = (parts.hostname or "").rstrip(".").lower()
+    port = parts.port or (443 if parts.scheme.lower() == "https" else 80)
+    ip = ips[0]
+    literal = f"[{ip}]" if ":" in ip else ip  # IPv6 needs brackets in --resolve
+    return f"{host}:{port}:{literal}", None
