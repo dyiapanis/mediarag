@@ -60,4 +60,44 @@ try:
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
+# --- promotion failure must roll back, never leave no destination -----------
+# Inject a failure on the SECOND rename (tmp -> dst) and prove the old tree is
+# restored rather than dst vanishing with only .old/.tmp left on disk.
+import time  # noqa: E402
+
+rollback_root = tempfile.mkdtemp(prefix="mediarag-swap-")
+real_rename, real_sleep = os.rename, time.sleep
+try:
+    dst = os.path.join(rollback_root, "dst")
+    tmpdir = os.path.join(rollback_root, "dst.tmp")
+    os.makedirs(dst)
+    os.makedirs(tmpdir)
+    open(os.path.join(dst, "old.txt"), "w").write("previous good tree")
+    open(os.path.join(tmpdir, "new.txt"), "w").write("replacement")
+
+    def failing_rename(a, b):
+        if a == tmpdir:
+            raise OSError("injected promotion failure")
+        return real_rename(a, b)
+
+    os.rename = failing_rename
+    time.sleep = lambda s: None  # skip the retry backoff; the failure is permanent here
+    try:
+        engine._swap_dir(tmpdir, dst)
+        check("failed promotion raises", False, "no error raised")
+    except OSError:
+        check("failed promotion raises", True)
+    check("destination still present after failure", os.path.isdir(dst))
+    check("previous content rolled back",
+          open(os.path.join(dst, "old.txt")).read() == "previous good tree")
+    check("old tree is not stranded as .old", not os.path.isdir(dst + ".old"))
+
+    os.rename, time.sleep = real_rename, real_sleep
+    engine._swap_dir(tmpdir, dst)
+    check("a later promotion still succeeds",
+          open(os.path.join(dst, "new.txt")).read() == "replacement")
+finally:
+    os.rename, time.sleep = real_rename, real_sleep
+    shutil.rmtree(rollback_root, ignore_errors=True)
+
 print("\nALL MATERIALIZE RACE CHECKS PASS")
