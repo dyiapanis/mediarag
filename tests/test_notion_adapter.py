@@ -30,7 +30,7 @@ def blk(typ, text="", **kw):
     return {"id": "b1", "type": typ, typ: body, "has_children": False}
 
 
-def check(name, cond, detail=""):
+def check(name, cond, detail=None):
     if not cond:
         print(f"FAIL {name}: {detail}")
         raise SystemExit(1)
@@ -159,5 +159,64 @@ check("multi_select property", "Tags: infra, search" in joined, joined)
 check("rich_text property", "Notes: quokka migration body" in joined, joined)
 check("date property", "Due: 2026-11-12" in joined, joined)
 check("checkbox property", "Done: no" in joined, joined)
+
+# --- child_page: title only, no recursion (documented scope) ------------------
+child = {"id": "cp", "type": "child_page", "has_children": False,
+         "child_page": {"title": "Sub Page"}}
+lines, sub = n.block_lines(child, 0, "tok")
+check("child_page emits title only", lines == ["# Sub Page"] and sub is None, (lines, sub))
+
+# --- 429: honor Retry-After, retry at most 3 times ----------------------------
+import io
+import unittest.mock as um
+
+
+class _Resp:
+    def __init__(self, body):
+        self._b = io.BytesIO(body)
+
+    def read(self):
+        return self._b.read()
+
+
+def _h429(retry_after):
+    return n.urllib.error.HTTPError(
+        "u", 429, "Too Many Requests", {"Retry-After": str(retry_after)},
+        io.BytesIO(b'{"code": "rate_limited"}'))
+
+
+sleeps = []
+with um.patch.object(n.time, "sleep", lambda s: sleeps.append(s)):
+    real_urlopen = n.urllib.request.urlopen
+    try:
+        state = {"n": 0}
+
+        def flaky(req, timeout=None):
+            state["n"] += 1
+            if state["n"] == 1:
+                raise _h429(2)
+            return _Resp(b'{"results": [], "has_more": false}')
+
+        n.urllib.request.urlopen = flaky
+        resp = n.get("/blocks/x/children", "tok", {"page_size": 100})
+        check("429 retried and parsed",
+              resp == {"results": [], "has_more": False} and state["n"] == 2, (resp, state["n"]))
+        check("Retry-After honored (slept >= 2s)", any(s >= 2 for s in sleeps), sleeps)
+
+        state["n"] = 0
+
+        def always429(req, timeout=None):
+            state["n"] += 1
+            raise _h429(1)
+
+        n.urllib.request.urlopen = always429
+        try:
+            n.get("/blocks/x/children", "tok")
+            check("persistent 429 raises", False, "no exception")
+        except n.urllib.error.HTTPError as e:
+            check("persistent 429 raises after 3 attempts",
+                  e.code == 429 and state["n"] == 3, (e.code, state["n"]))
+    finally:
+        n.urllib.request.urlopen = real_urlopen
 
 print("\nALL NOTION ADAPTER CHECKS PASS")

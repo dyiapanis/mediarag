@@ -7,6 +7,9 @@ Stdlib only; no dependencies. Community adapters follow this shape.
 
 Text only, deliberately: Notion-hosted files/images carry signed URLs that
 expire within an hour, so they are not stable corpus assets.
+Sub-pages: child_page/child_database blocks contribute their TITLE only —
+there is no workspace-wide crawl; index a sub-page's body via its own
+notion://<id>.
 """
 import json
 import os
@@ -29,13 +32,25 @@ SKIP_BLOCK_TYPES = {       # never text; never try to decode them
 def get(path, token, params=None, payload=None):
     url = API + path + (("?" + urllib.parse.urlencode(params)) if params else "")
     data = json.dumps(payload).encode() if payload is not None else None
-    req = urllib.request.Request(url, data=data, headers={
-        "Authorization": "Bearer " + token,
-        "Notion-Version": VERSION,
-        "Content-Type": "application/json",
-    }, method="POST" if data else "GET")
-    time.sleep(RATE_DELAY)
-    return json.load(urllib.request.urlopen(req, timeout=45))
+    for attempt in range(3):  # transient 429 bursts get a Retry-After pass, not a dead source
+        time.sleep(RATE_DELAY)
+        req = urllib.request.Request(url, data=data, headers={
+            "Authorization": "Bearer " + token,
+            "Notion-Version": VERSION,
+            "Content-Type": "application/json",
+        }, method="POST" if data else "GET")
+        try:
+            return json.load(urllib.request.urlopen(req, timeout=45))
+        except urllib.error.HTTPError as e:
+            if e.code != 429 or attempt == 2:
+                raise
+            try:
+                e.read()  # drain the socket before sleeping
+            except Exception:
+                pass
+            hdrs = getattr(e, "hdrs", None) or getattr(e, "headers", None) or {}
+            time.sleep(max(float(hdrs.get("Retry-After") or 1), RATE_DELAY))
+    raise RuntimeError("unreachable")
 
 
 def rich_text(block_type_obj):
