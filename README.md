@@ -7,12 +7,12 @@ agent-plugin per the [agent-plugins.org](https://agent-plugins.org/) 1.0
 standard.
 
 It indexes documents (pdf, office files, notes, html) and media (images, audio,
-subtitles) into one local SQLite corpus, and you search both by meaning from any
-MCP-capable agent. Video is not an ingest format: pull the soundtrack out first
-(`ffmpeg -i clip.mp4 -vn -ac 1 -ar 16000 soundtrack.wav`) and index that — the
-audio tower then makes the clip findable by what was said in it. "Which file mentions the
-landing" and "where is the clip where I talked about it" are the same kind of
-question.
+subtitles, video) into one local SQLite corpus, and you search both by meaning
+from any MCP-capable agent. Video files are indexed natively: frames sampled at
+0.5 fps (each frame carries its timestamp and a thumbnail — picture content is
+searchable) plus the full audio track (spoken content, 11.2 s windows), so
+"which file mentions the landing", "where did I talk about it", and "find the
+frame with the logo" are all the same kind of question.
 
 How it runs:
 
@@ -70,7 +70,7 @@ System tools are needed only by the lanes that use them:
 
 | Tool | Used for | Install |
 |---|---|---|
-| `ffmpeg` | audio | `apt install ffmpeg` · `winget install Gyan.FFmpeg` · `brew install ffmpeg` |
+| `ffmpeg` | audio + video | `apt install ffmpeg` · `winget install Gyan.FFmpeg` · `brew install ffmpeg` |
 | `pandoc` | docx, odt, epub, rst, html, csv, rtf | `apt install pandoc` · `winget install JohnMacFarlane.Pandoc` · `brew install pandoc` |
 | `pdftotext` | pdf | `apt install poppler-utils` · `winget install oschwartz10612.Poppler` · `brew install poppler` |
 | `curl` | `add_source` on an http(s) URL | preinstalled on all three |
@@ -126,7 +126,9 @@ runs offline (`HF_HUB_OFFLINE=1`).
 - Hybrid retrieval: semantic vectors plus an FTS5/BM25 keyword lane, fused with
   reciprocal rank fusion. Exact-string lookups and meaning searches both work.
 - Documents and media in one index: pdf via `pdftotext`, docx/odt/epub/rst/html/csv/rtf
-  via `pandoc`, plus images, audio, and subtitles.
+  via `pandoc`, plus images, audio, subtitles, and video (mp4/mov/mkv/webm/avi/m4v —
+  frames at 0.5 fps + the audio track; >8 min of footage is sampled to the first 240
+  frames and reports `frame_cap`).
 - Incremental re-indexing: unchanged files are skipped on an mtime+size
   fingerprint.
 - Source adapters: external collections through `sources.d` executables (see
@@ -151,7 +153,8 @@ both are directly comparable.
 - **1024-token cap** on the text trunk. Attention is quadratic in sequence
   length, so tool input is sliced at that boundary rather than trusted.
 - **Chunking**: documents and notes at 1,500 characters, subtitles at 600,
-  audio in 11.2-second windows.
+  audio in 11.2-second windows, video frames at 0.5 fps (one vector per frame
+  plus a 256 px thumbnail — indexing runs ~3 s of embed CPU per frame).
 - If the Hugging Face cache stores the ONNX shards as symlinks, they are
   materialised once into `~/.cache/mediarag/onnx-real`: onnxruntime will not
   load external-data blobs out of a sharded cache.

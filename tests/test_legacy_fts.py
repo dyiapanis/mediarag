@@ -48,7 +48,7 @@ try:
 
     c = store.connect(root)
     cols = [r[1] for r in c.execute("PRAGMA table_info(kw_fts)")]
-    check("legacy kw_fts rebuilt with span_start", cols == ["uri", "span_start", "text"], cols)
+    check("legacy kw_fts rebuilt with span_start+kind", cols == ["uri", "span_start", "kind", "text"], cols)
     hits = store.keyword_search(c, "marmalade", k=5)
     check("keyword search works on a migrated corpus", len(hits) == 1, hits)
     check("migrated hit is the legacy row", hits and hits[0]["uri"] == uri, hits)
