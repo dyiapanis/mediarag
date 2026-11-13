@@ -1,7 +1,10 @@
 """MediaRAG corpus store: SQLite + embeddings (f32 blobs), brute-force cosine.
 
 Schema (the migration unit — unchanged from the validated corpus):
-assets(uri, kind, span_start, span_end, snippet, thumb, vec) UNIQUE(uri, span_start).
+assets(uri, kind, span_start, span_end, snippet, thumb, vec) UNIQUE(uri, kind, span_start).
+(kind joined the unique key for the video lane: one video file multiplexes an
+image row and an audio chunk both at span_start=0.0; kind-scoped uniqueness
+keeps re-ingest idempotent per kind while letting lanes coexist.)
 """
 from __future__ import annotations
 
@@ -23,10 +26,10 @@ CREATE TABLE IF NOT EXISTS assets(
     thumb BLOB,
     vec BLOB NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS assets_uri_span ON assets(uri, span_start);
+CREATE UNIQUE INDEX IF NOT EXISTS assets_uri_span ON assets(uri, kind, span_start);
 CREATE INDEX IF NOT EXISTS assets_kind ON assets(kind);
 CREATE VIRTUAL TABLE IF NOT EXISTS kw_fts USING fts5(
-    uri UNINDEXED, span_start UNINDEXED, text
+    uri UNINDEXED, span_start UNINDEXED, kind UNINDEXED, text
 );
 CREATE TABLE IF NOT EXISTS fingerprints(
     uri TEXT PRIMARY KEY, fp TEXT
@@ -42,17 +45,29 @@ def _migrate(c: sqlite3.Connection) -> None:
         c.execute("DROP INDEX IF EXISTS assets_agent")  # index must go before the column
         c.execute("ALTER TABLE assets DROP COLUMN agent")
         c.commit()
+    # Pre-video corpora keyed uniqueness on (uri, span_start): a video file
+    # multiplexes an image frame and an audio chunk both at 0.0 (repeat every
+    # lcm(period, chunk)) so rebuild the index with kind in the key. Dropping
+    # the old key can only RELAX constraints — the rebuild cannot fail.
+    idx = c.execute("SELECT sql FROM sqlite_master WHERE name='assets_uri_span'").fetchone()
+    if idx and (idx[0] or "") and "kind" not in idx[0]:
+        c.execute("DROP INDEX assets_uri_span")
+        c.execute("CREATE UNIQUE INDEX assets_uri_span ON assets(uri, kind, span_start)")
+        c.commit()
     # CREATE VIRTUAL TABLE IF NOT EXISTS keeps an older kw_fts shape forever, so a
     # corpus built before span_start existed would fail every insert and every
     # keyword search. kw_fts is only a mirror of assets — rebuild it in place.
+    # The video lane made retrieval identity (uri, kind, span_start): one video
+    # uri carries an image frame and an audio chunk both at 0.0, so the mirror
+    # and both retrieval joins must know kind or they cross-hydrate modalities.
     fts_cols = [r[1] for r in c.execute("PRAGMA table_info(kw_fts)")]
-    if fts_cols and fts_cols != ["uri", "span_start", "text"]:
+    if fts_cols and fts_cols != ["uri", "span_start", "kind", "text"]:
         c.execute("DROP TABLE kw_fts")
-        c.execute("CREATE VIRTUAL TABLE kw_fts USING fts5(uri UNINDEXED, span_start UNINDEXED, text)")
-        rows = c.execute("SELECT uri, span_start, snippet FROM assets").fetchall()
+        c.execute("CREATE VIRTUAL TABLE kw_fts USING fts5(uri UNINDEXED, span_start UNINDEXED, kind UNINDEXED, text)")
+        rows = c.execute("SELECT uri, span_start, kind, snippet FROM assets").fetchall()
         c.executemany(
-            "INSERT INTO kw_fts(uri, span_start, text) VALUES(?,?,?)",
-            [(u, s, _fts_text(snip, u, is_label=s < 0)) for u, s, snip in rows],
+            "INSERT INTO kw_fts(uri, span_start, kind, text) VALUES(?,?,?,?)",
+            [(u, s, kd, _fts_text(snip, u, is_label=s < 0)) for u, s, kd, snip in rows],
         )
         c.commit()
 
@@ -98,9 +113,9 @@ def upsert_uri(c: sqlite3.Connection, uri: str, rows: list[dict], fp: str | None
             ],
         )
         c.executemany(
-            "INSERT INTO kw_fts(uri, span_start, text) VALUES(?,?,?)",
-            [(uri, r["span_start"], _fts_text(r["snippet"], r["uri"],
-                                              is_label=r["span_start"] < 0)) for r in rows],
+            "INSERT INTO kw_fts(uri, span_start, kind, text) VALUES(?,?,?,?)",
+            [(uri, r["span_start"], r["kind"], _fts_text(r["snippet"], r["uri"],
+                                               is_label=r["span_start"] < 0)) for r in rows],
         )
         if fp:
             c.execute("INSERT INTO fingerprints(uri, fp) VALUES(?,?)", (uri, fp))
@@ -148,7 +163,8 @@ def keyword_search(c: sqlite3.Connection, query: str, k: int = 5,
     thumb_col = ", a.thumb" if include_thumbnails else ""
     sql = ("SELECT a.uri, a.span_start, a.kind, a.span_end, a.snippet" + thumb_col +
            " FROM kw_fts JOIN assets a"
-           " ON a.uri = kw_fts.uri AND a.span_start = kw_fts.span_start"
+           " ON a.uri = kw_fts.uri AND a.kind = kw_fts.kind"
+           " AND a.span_start = kw_fts.span_start"
            " WHERE kw_fts MATCH ?" + (" AND a.kind = ?" if kind else "") +
            " ORDER BY bm25(kw_fts) LIMIT ?")
     args: list = [fts_q] + ([kind] if kind else []) + [k]
@@ -172,11 +188,11 @@ def rrf_blend(semantic: list[dict], keyword: list[dict], k: int = 5,
     scores: dict[tuple, float] = {}
     rows: dict[tuple, dict] = {}
     for rank, hit in enumerate(semantic):
-        key = (hit["uri"], hit["span_start"])
+        key = (hit["uri"], hit["kind"], hit["span_start"])
         scores[key] = scores.get(key, 0.0) + 1.0 / (k60 + rank + 1)
         rows.setdefault(key, hit)
     for rank, hit in enumerate(keyword):
-        key = (hit["uri"], hit["span_start"])
+        key = (hit["uri"], hit["kind"], hit["span_start"])
         scores[key] = scores.get(key, 0.0) + 1.0 / (k60 + rank + 1)
         rows.setdefault(key, hit)
     top = sorted(scores.items(), key=lambda kv: -kv[1])[:k]

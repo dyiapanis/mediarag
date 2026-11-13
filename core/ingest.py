@@ -24,6 +24,7 @@ TEXT_EXT = {"md", "txt"}
 SUBS_EXT = {"srt", "vtt"}
 IMAGE_EXT = {"jpg", "jpeg", "png", "webp"}
 AUDIO_EXT = {"wav", "mp3", "m4a", "ogg", "flac", "aac"}
+VIDEO_EXT = {"mp4", "mov", "mkv", "webm", "avi", "m4v"}
 # Document formats via external converters (parity with the fleet doc-RAG corpus):
 #   pandoc: docx odt epub rst html csv rtf
 #   pdftotext (poppler): pdf
@@ -34,6 +35,10 @@ CHUNK_CHARS = 1500
 SUBS_CHUNK_CHARS = 600
 AUDIO_CHUNK = 179_200  # 11.2 s @ 16k
 SR = 16_000
+# ponytail: fixed 0.5 fps and a 240-frame cap — constants, no config surface.
+# Upgrade path if a real corpus outgrows them: config key + scene-change sampling.
+VIDEO_FPS = 0.5
+VIDEO_MAX_FRAMES = 240  # ~8 min of footage fully captured at 0.5 fps
 MIN_CONTENT_CHARS = 50  # rag parity: files whose extracted text is shorter are cruft
 
 # rag-sources.yaml exclusions, mirrored verbatim (fleet corpus parity)
@@ -79,6 +84,8 @@ def kind_of(path: str) -> str | None:
         return "image"
     if e in AUDIO_EXT:
         return "audio"
+    if e in VIDEO_EXT:
+        return "video"
     return None
 
 
@@ -235,6 +242,81 @@ def wav16_mono(path: str) -> np.ndarray:
             pass
 
 
+def _audio_rows(path: str, uri: str) -> list[dict]:
+    """The audio track of any ffmpeg-decodable file, chunked at 11.2 s with spans.
+
+    Raises ValueError when the decoded track is below 0.1 s (caller decides
+    whether that is a skip (pure audio file) or ignorable (video frames remain))."""
+    data = wav16_mono(path)
+    if len(data) < SR // 10:
+        raise ValueError("audio track below 0.1 s")
+    base = os.path.basename(path)
+    rows = []
+    for i in range(0, len(data), AUDIO_CHUNK):
+        seg = data[i:i + AUDIO_CHUNK]
+        if len(seg) < SR // 10:
+            break
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False, dir=cache_dir()) as f:
+            tmp = f.name
+        try:
+            with wave.open(tmp, "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(SR)
+                w.writeframes((np.clip(seg, -1, 1) * 32767).astype("<i2").tobytes())
+            start = i / SR
+            end = start + len(seg) / SR
+            rows.append({"uri": uri, "kind": "audio", "span_start": start, "span_end": end,
+                         "snippet": f"{base} [{start:.1f}-{end:.1f}s]",
+                         "vec": embed_audio(tmp), "thumb": None})
+        finally:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+    return rows
+
+
+def _video_frames(path: str, uri: str) -> tuple[list[dict], list[dict]]:
+    """ffmpeg-sampled frames → image-lane rows with timestamps and thumbnails.
+
+    fps filter re-stamps output frames, so frame i sits at t = i / VIDEO_FPS.
+    Returns (rows, warnings) — warnings holds a frame_cap entry when the cap cut
+    sampling short."""
+    import shutil
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError("ffmpeg not installed — needed to decode video")
+    out = tempfile.mkdtemp(dir=cache_dir())
+    period = 1.0 / VIDEO_FPS
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-v", "error", "-i", path,
+             "-vf", f"fps={VIDEO_FPS:g},scale=512:-2",
+             "-frames:v", str(VIDEO_MAX_FRAMES),  # cap decode+disk, not just embedding
+             os.path.join(out, "%05d.jpg")],
+            check=True, capture_output=True, timeout=1200,
+        )
+        base = os.path.basename(path)
+        rows, warns = [], []
+        for i, fn in enumerate(sorted(os.listdir(out))):  # %05d → chronological
+            if i >= VIDEO_MAX_FRAMES:  # unreachable under -frames:v; belt and braces
+                break
+            fp = os.path.join(out, fn)
+            thumb = thumb256(fp)
+            if thumb is None:
+                continue
+            t = i * period
+            rows.append({"uri": uri, "kind": "image", "span_start": t, "span_end": t + period,
+                         "snippet": f"{base} frame [{t:.1f}s]",
+                         "vec": embed_image(fp), "thumb": thumb})
+        if len(rows) >= VIDEO_MAX_FRAMES:  # -frames:v stopped sampling == cap reached
+            warns.append({"uri": path, "code": "frame_cap", "detail":
+                          f"first {VIDEO_MAX_FRAMES} frames indexed at {VIDEO_FPS:g} fps"})
+        return rows, warns
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
 def thumb256(path: str) -> bytes | None:
     from PIL import Image
     try:
@@ -275,6 +357,7 @@ def index_file(c, path: str, incremental: bool = True) -> tuple[int, list[dict]]
         if row and fp and row[0] == fp:
             return -1, []  # unchanged since last ingest — skip, no re-embed
     rows: list[dict] = []
+    extra_skips: list[dict] = []  # non-fatal warnings on a successfully indexed file (frame_cap)
     try:
         e = ext_of(path)
         if e in SUBS_EXT or e in TEXT_EXT:
@@ -310,33 +393,20 @@ def index_file(c, path: str, incremental: bool = True) -> tuple[int, list[dict]]
             rows.append({"uri": uri, "kind": "image", "span_start": 0.0, "span_end": 0.0,
                          "snippet": os.path.basename(path), "vec": embed_image(path),
                          "thumb": thumb})
-        else:
-            data = wav16_mono(path)
-            if len(data) < SR // 10:
+        elif kind == "audio":
+            try:
+                rows.extend(_audio_rows(path, uri))
+            except ValueError:
                 return 0, [{"uri": path, "code": "empty"}]
-            base = os.path.basename(path)
-            for i in range(0, len(data), AUDIO_CHUNK):
-                seg = data[i:i + AUDIO_CHUNK]
-                if len(seg) < SR // 10:
-                    break
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False, dir=cache_dir()) as f:
-                    tmp = f.name
-                try:
-                    with wave.open(tmp, "wb") as w:
-                        w.setnchannels(1)
-                        w.setsampwidth(2)
-                        w.setframerate(SR)
-                        w.writeframes((np.clip(seg, -1, 1) * 32767).astype("<i2").tobytes())
-                    start = i / SR
-                    end = start + len(seg) / SR
-                    rows.append({"uri": uri, "kind": "audio", "span_start": start, "span_end": end,
-                                 "snippet": f"{base} [{start:.1f}-{end:.1f}s]",
-                                 "vec": embed_audio(tmp), "thumb": None})
-                finally:
-                    try:
-                        os.unlink(tmp)
-                    except OSError:
-                        pass
+        else:  # kind == "video": sampled frames + audio track (absent track → frames only)
+            frame_rows, extra_skips = _video_frames(path, uri)
+            rows.extend(frame_rows)
+            try:
+                rows.extend(_audio_rows(path, uri))
+            except (ValueError, subprocess.CalledProcessError):
+                pass  # no/undecodable audio stream in the container — frames cover the file
+                # (embedder/model failures are RuntimeError/TimeoutExpired: they propagate
+                # so the whole file fails loudly and re-ingests after the infra heals)
     except ImportError as ex:
         # Engine deps gone (no torch/torchvision, stale model cache): every file
         # fails identically, so it gets its own code — the nightly lane has to
@@ -355,7 +425,7 @@ def index_file(c, path: str, incremental: bool = True) -> tuple[int, list[dict]]
     rows.append({"uri": uri, "kind": label_rows_kind, "span_start": -1.0, "span_end": -1.0,
                  "snippet": label, "vec": embed_doc(label), "thumb": None})
     store.upsert_uri(c, uri, rows, fp=_fingerprint(path))
-    return len(rows), []
+    return len(rows), extra_skips
 
 
 def reap_missing(c, d: str) -> list[str]:
@@ -386,7 +456,7 @@ def reap_missing(c, d: str) -> list[str]:
 
 def index_dir(c, d: str, incremental: bool = True) -> dict:
     """Walk d, index every supported file. Per-file errors collected, never fatal."""
-    processed = skipped = added = unchanged = 0
+    processed = skipped = added = unchanged = warned = 0
     skip_entries: list[dict] = []
     for dirpath, dirnames, filenames in os.walk(d, followlinks=False):  # explicit: no symlink loops
         dirnames[:] = sorted(x for x in dirnames if not x.startswith("."))
@@ -399,11 +469,16 @@ def index_dir(c, d: str, incremental: bool = True) -> dict:
             n, skip = index_file(c, p, incremental=incremental)
             if n == -1:
                 unchanged += 1
-            elif n:
-                added += n
-                processed += 1
-            elif skip:
-                skipped += 1
+            else:
+                if n:
+                    added += n
+                    processed += 1
+                    if skip:
+                        warned += 1
+                elif skip:
+                    skipped += 1
+                # warnings ride on a successful index (video frame_cap) — visible in
+                # the detail list and counted in skips_total, but not "skipped" files
                 skip_entries.extend(skip)
     # counts and lists must never disagree: the first 20 ride along, the totals
     # say whether anything was cut (a consumer printing only the list under-
@@ -411,5 +486,6 @@ def index_dir(c, d: str, incremental: bool = True) -> dict:
     reaped = reap_missing(c, d)
     return {"processed": processed, "added": added, "skipped": skipped,
             "unchanged": unchanged, "skipped_detail": skip_entries[:20],
-            "skips_total": skipped, "skips_truncated": skipped > 20,
+            "skips_total": skipped + warned, "warnings": warned,
+            "skips_truncated": skipped + warned > 20,
             "reaped": len(reaped), "reaped_uris": reaped[:20]}

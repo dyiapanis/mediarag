@@ -66,8 +66,8 @@ try:
     remote = "pcloud://library/notes.md"
     c.execute("INSERT INTO assets(uri,kind,span_start,span_end,snippet,thumb,vec) "
               "VALUES(?,?,?,?,?,?,?)", (remote, "text", -1.0, -1.0, "remote note", None, b"\x00" * 16))
-    c.execute("INSERT INTO kw_fts(uri,span_start,text) VALUES(?,?,?)",
-              (remote, -1.0, "remote note"))
+    c.execute("INSERT INTO kw_fts(uri,span_start,kind,text) VALUES(?,?,?,?)",
+              (remote, -1.0, "text", "remote note"))
     c.commit()
     os.remove(doc)
     res = ingest.index_dir(c, corpus)
