@@ -42,7 +42,7 @@ def _table():
          T.tool_search,
          {"query": {"type": "string", "description": "natural-language query"},
           "k": {"type": "integer", "default": 5},
-          "kind": {"type": "string", "enum": ["text", "image", "audio"]},
+          "kind": {"type": "string", "enum": ["text", "image", "audio", "video"]},
           "include_thumbnails": {"type": "boolean", "default": True},
           },
          ["query"]),
