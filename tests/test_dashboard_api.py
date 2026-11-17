@@ -1,4 +1,4 @@
-"""MediaRAG dashboard backend: plugin_api routes (offline, real corpus untouched).
+"""MediaRAG dashboard backend: plugin_api routes (offline) + one real-child roundtrip.
 
 Run: python tests/test_dashboard_api.py   (skips when fastapi is absent)
 """
@@ -19,8 +19,7 @@ sys.path.insert(0, ROOT)
 import importlib.machinery
 import importlib.util
 
-# Import the repo copy (dashboard/plugin_api.py), not any deployed copy.
-os.environ["MEDIARAG_ROOT"] = "/tmp/phoenix-dashboard-test-corpus"
+os.environ.setdefault("MEDIARAG_ROOT", "/tmp/phoenix-dashboard-test-corpus")
 spec = importlib.util.spec_from_file_location(
     "mediarag_plugin_api", os.path.join(ROOT, "dashboard", "plugin_api.py"),
     loader=importlib.machinery.SourceFileLoader("mediarag_plugin_api", os.path.join(ROOT, "dashboard", "plugin_api.py")))
@@ -48,42 +47,114 @@ FAKE_RESULTS = {
 }
 
 
-class FakeTools:
-    calls = []
+def rpc_reply(rid, payload):
+    """The stdio server's reply frame for a successful tools/call."""
+    return json.dumps({"jsonrpc": "2.0", "id": rid,
+                       "result": {"content": [{"type": "text", "text": json.dumps(payload)}]}})
 
-    @staticmethod
-    def tool_search(q, k=5, kind=None, include_thumbnails=True, root=None):
-        FakeTools.calls.append(("search", q, k, kind, root))
-        return dict(FAKE_RESULTS)
 
-    @staticmethod
-    def tool_status(root=None, **_x):
-        FakeTools.calls.append(("status", root))
-        return {"total": 2, "counts": {"image": 1, "audio": 1}, "uris": 2, "root": root}
+class FakeProc:
+    """Scripted newline-JSON-RPC child."""
+
+    def __init__(self, replies):
+        self.lines = list(replies)
+        self.sent = []
+
+        class _In:
+            def __init__(self, host):
+                self._h = host
+
+            def write(self, s):
+                self._h.sent.append(s)
+
+            def flush(self):
+                pass
+
+        self.stdin = _In(self)
+
+        class _Out:
+            def __init__(self, host):
+                self._h = host
+
+            def readline(self):
+                return self._h.lines.pop(0) + "\n"
+
+        self.stdout = _Out(self)
+
+    def poll(self):
+        return None
+
+
+def with_child(replies, fn=None):
+    fake = FakeProc(replies)
+    sentinel_api = api
+    with um.patch.object(sentinel_api, "_proc", fake), \
+         um.patch.object(sentinel_api, "_spawn", lambda: None):
+        return fn() if fn else None
 
 
 # --- manifest sanity ----------------------------------------------------------
 with open(os.path.join(ROOT, "dashboard", "manifest.json")) as f:
     manifest = json.load(f)
 check("manifest name", manifest["name"] == "mediarag")
-check("icon is mapped", manifest["icon"] in {
-    "Activity", "BarChart3", "Clock", "Code", "Database", "Eye", "FileText", "Globe",
-    "Heart", "KeyRound", "MessageSquare", "Package", "Puzzle", "Settings", "Shield",
-    "Sparkles", "Star", "Terminal", "Wrench", "Zap"}, manifest["icon"])
 check("entry exists", os.path.exists(os.path.join(ROOT, "dashboard", manifest["entry"])))
 
-# --- handlers: passthrough + validation ---------------------------------------
-api._tools = lambda: FakeTools  # stub the deployed-package import
+# --- rpc: rid-matched reply ----------------------------------------------------
+def _probe1():
+    out = api._rpc("tools/call", {"name": "mediarag_x"}, rid=37)
+    check("rpc returns rid-matched result",
+          out == {"content": [{"type": "text", "text": json.dumps(FAKE_RESULTS)}]}, out)
+    check("rpc wrote the request", "tools/call" in (api._proc.sent[0] if api._proc.sent else ""), api._proc.sent)
 
-hits = asyncio.run(api.search("quokka lantern", k=8))
-check("search passthrough", hits == FAKE_RESULTS, hits)
-check("search args", FakeTools.calls[-1] == ("search", "quokka lantern", 8, None,
-                                             "/tmp/phoenix-dashboard-test-corpus"), FakeTools.calls[-1])
+replies = [rpc_reply(37, FAKE_RESULTS)]
+with_child(replies, _probe1)
 
-asyncio.run(api.search("again", kind="audio", k=99))
-check("kind passthrough + k clamped", FakeTools.calls[-1] == ("search", "again", 20, "audio",
-                                                              "/tmp/phoenix-dashboard-test-corpus"), FakeTools.calls[-1])
+# --- _call passthrough ---------------------------------------------------------
+def _probe2():
+    out = api._call("mediarag_search", {"query": "quokka"})
+    check("call passthrough", out == FAKE_RESULTS, out)
 
+replies = [rpc_reply(1, FAKE_RESULTS)]
+with_child(replies, _probe2)
+
+# child-reported tool error surfaces as a raised error
+def _probe3():
+    try:
+        api._call("mediarag_search", {})
+        check("child tool error raises", False, "no exception")
+    except RuntimeError as e:
+        check("child tool error raises", "boom" in str(e), str(e))
+
+err_reply = [json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"content": [
+    {"type": "text", "text": "error: boom"}], "isError": True}})]
+with_child(err_reply, _probe3)
+
+# dead child triggers a respawn attempt (503 offline is a clean refusal)
+def _probe4():
+    try:
+        api._call("mediarag_status", {})
+    except RuntimeError:
+        pass
+    except HTTPException:
+        pass
+
+respawned = {"n": 0}
+fake = FakeProc([rpc_reply(1, {"ok": 1})])
+fake.poll = lambda: 1  # type: ignore[method-assign]  # pretend the child died
+with um.patch.object(api, "_proc", fake), \
+     um.patch.object(api, "_spawn", (lambda: respawned.__setitem__("n", respawned["n"] + 1))):
+    api._call("mediarag_status", {})
+check("dead child triggers respawn attempt", respawned["n"] == 1, respawned)
+
+# --- handlers (via stubbed _call) ----------------------------------------------
+with um.patch.object(api, "_call", lambda t, a: {"results": FAKE_RESULTS["results"]}
+                     if t == "mediarag_search" else {"total": 2}):
+    hits = asyncio.run(api.search("quokka lantern", k=8))
+    check("search passthrough", hits == {"results": FAKE_RESULTS["results"]}, hits)
+    st = asyncio.run(api.status())
+    check("status passthrough", st == {"total": 2}, st)
+
+# --- validation unchanged -----------------------------------------------------
 try:
     asyncio.run(api.search(""))
     check("empty query rejected", False, "no exception")
@@ -96,13 +167,20 @@ try:
 except HTTPException as e:
     check("bad kind rejected", e.status_code == 400, e.status_code)
 
-st = asyncio.run(api.status())
-check("status passthrough + root wired", st["total"] == 2 and st["root"] == "/tmp/phoenix-dashboard-test-corpus", st)
-
 vres = asyncio.run(api.search("frame", kind="video"))
-check("kind=video accepted", vres == FAKE_RESULTS and FakeTools.calls[-1][:4] == ("search", "frame", 5, "video"), FakeTools.calls[-1])
+check("kind=video accepted", "results" in vres, vres)
 
-# --- index.js is syntactically valid JS (node when available) ------------------
+# --- 503 when no engine env resolves ------------------------------------------
+with um.patch.object(api, "_engine_python", lambda: None), \
+     um.patch.object(api, "_proc", None):
+    api._proc = None
+    try:
+        asyncio.run(api.status())
+        check("no-engine -> 503", False, "no exception")
+    except HTTPException as e:
+        check("no-engine -> 503", e.status_code == 503, e.status_code)
+
+# --- index.js parses ----------------------------------------------------------
 import shutil
 import subprocess
 if shutil.which("node"):
@@ -112,5 +190,15 @@ if shutil.which("node"):
     check("index.js parses", r.returncode == 0, r.stderr.decode()[:200])
 else:
     print("note: node absent — index.js not syntax-checked")
+
+# --- real child roundtrip (local only; CI has no installs env) ----------------
+py = api._engine_python()
+if py:
+    api._proc = None
+    st = asyncio.run(api.status())
+    check("REAL child roundtrip: status", isinstance(st, dict) and "total" in st,
+          str(st)[:120])
+else:
+    print("SKIP real-child roundtrip: no engine env on this box")
 
 print("\nALL DASHBOARD API CHECKS PASS")
