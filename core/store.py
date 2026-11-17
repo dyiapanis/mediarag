@@ -54,6 +54,15 @@ def _migrate(c: sqlite3.Connection) -> None:
         c.execute("DROP INDEX assets_uri_span")
         c.execute("CREATE UNIQUE INDEX assets_uri_span ON assets(uri, kind, span_start)")
         c.commit()
+    # The video lane first stored sampled frames as kind='image'; video chunks
+    # have their own kind now — rekind surviving image rows whose uri is a video
+    # container (assets + the kw_fts kind mirror). Idempotent by predicate.
+    vids = " OR ".join(f"uri LIKE '%.{e}'" for e in ("mp4", "mov", "mkv", "webm", "avi", "m4v"))
+    n = c.execute(f"SELECT COUNT(*) FROM assets WHERE kind='image' AND ({vids})").fetchone()[0]
+    if n:
+        c.execute(f"UPDATE assets SET kind='video' WHERE kind='image' AND ({vids})")
+        c.execute(f"UPDATE kw_fts SET kind='video' WHERE kind='image' AND ({vids})")
+        c.commit()
     # CREATE VIRTUAL TABLE IF NOT EXISTS keeps an older kw_fts shape forever, so a
     # corpus built before span_start existed would fail every insert and every
     # keyword search. kw_fts is only a mirror of assets — rebuild it in place.
