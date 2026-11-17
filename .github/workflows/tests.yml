@@ -66,6 +66,8 @@ jobs:
         run: python tests/test_config_root_paths.py
       - name: Legacy kw_fts schema migration (offline)
         run: python tests/test_legacy_fts.py
+      - name: Dashboard backend (offline, no gateway)
+        run: python tests/test_dashboard_api.py
       - name: Contract suite (tool/store/adapter contracts, no model)
         run: python tests/test_contract.py
       - name: Dependency pin and version surfaces in sync
@@ -110,6 +112,8 @@ jobs:
         run: python tests/test_config_root_paths.py
       - name: Legacy kw_fts schema migration (offline)
         run: python tests/test_legacy_fts.py
+      - name: Dashboard backend (offline, no gateway)
+        run: python tests/test_dashboard_api.py
       - name: Dependency pin and version surfaces in sync
         run: python tests/test_dependency_sync.py
       - name: Notion adapter units (offline, no token)
@@ -169,6 +173,8 @@ jobs:
         run: python tests/test_config_root_paths.py
       - name: Legacy kw_fts schema migration (offline)
         run: python tests/test_legacy_fts.py
+      - name: Dashboard backend (offline, no gateway)
+        run: python tests/test_dashboard_api.py
       - name: Dependency pin and version surfaces in sync
         run: python tests/test_dependency_sync.py
       - name: Notion adapter units (offline, no token)
