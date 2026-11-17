@@ -306,7 +306,7 @@ def _video_frames(path: str, uri: str) -> tuple[list[dict], list[dict]]:
             if thumb is None:
                 continue
             t = i * period
-            rows.append({"uri": uri, "kind": "image", "span_start": t, "span_end": t + period,
+            rows.append({"uri": uri, "kind": "video", "span_start": t, "span_end": t + period,
                          "snippet": f"{base} frame [{t:.1f}s]",
                          "vec": embed_image(fp), "thumb": thumb})
         if len(rows) >= VIDEO_MAX_FRAMES:  # -frames:v stopped sampling == cap reached

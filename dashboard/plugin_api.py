@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException
 router = APIRouter()
 
 PLUGIN_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-KINDS = ("text", "image", "audio")
+KINDS = ("text", "image", "audio", "video")
 
 
 # ponytail: flat `root:` line parse (config > env > default) in-place — the

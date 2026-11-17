@@ -91,13 +91,16 @@ except HTTPException as e:
     check("empty query rejected", e.status_code == 400, e.status_code)
 
 try:
-    asyncio.run(api.search("x", kind="video"))
+    asyncio.run(api.search("x", kind="warp_drive"))
     check("bad kind rejected", False, "no exception")
 except HTTPException as e:
     check("bad kind rejected", e.status_code == 400, e.status_code)
 
 st = asyncio.run(api.status())
 check("status passthrough + root wired", st["total"] == 2 and st["root"] == "/tmp/phoenix-dashboard-test-corpus", st)
+
+vres = asyncio.run(api.search("frame", kind="video"))
+check("kind=video accepted", vres == FAKE_RESULTS and FakeTools.calls[-1][:4] == ("search", "frame", 5, "video"), FakeTools.calls[-1])
 
 # --- index.js is syntactically valid JS (node when available) ------------------
 import shutil

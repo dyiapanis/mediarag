@@ -91,7 +91,7 @@ def register(ctx) -> None:
         {
             "query": {"type": "string", "description": "natural-language query (or keyword terms)"},
             "k": {"type": "integer", "default": 5},
-            "kind": {"type": "string", "enum": ["text", "image", "audio"]},
+            "kind": {"type": "string", "enum": ["text", "image", "audio", "video"]},
             "include_thumbnails": {"type": "boolean", "default": True},
         },
         ["query"],

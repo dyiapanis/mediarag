@@ -66,10 +66,10 @@ try:
     with um.patch.object(ingest, "VIDEO_FPS", 1.0):
         n, skip = ingest.index_file(c, mp4)
         rows = kinds(c, mp4)
-        frames = [(s, e) for k, s, e, _ in rows if k == "image" and s >= 0]
+        frames = [(s, e) for k, s, e, _ in rows if k == "video" and s >= 0]
         auds = [(s, e) for k, s, e, _ in rows if k == "audio"]
         labels = [(k, s, e, t) for k, s, e, t in rows if s < 0]
-        thumbs = [t for k, s, e, t in rows if k == "image" and s >= 0 and t is not None]
+        thumbs = [t for k, s, e, t in rows if k == "video" and s >= 0 and t is not None]
         check("audio-video indexed rows", n > 2 and not skip, (n, skip))
         check("frames present with timestamps", len(frames) >= 2 and frames[0][0] == 0.0, frames[:4])
         check("spans strictly increase", all(b[0] > a[0] for a, b in zip(frames, frames[1:])), frames[:6])
@@ -88,7 +88,7 @@ try:
         n3, skip3 = ingest.index_file(c, silent)
         rows3 = kinds(c, silent)
         check("silent indexed", n3 >= 2 and not skip3, (n3, skip3))
-        check("silent has frames", len([x for x in rows3 if x[0] == "image" and x[1] >= 0]) >= 2,
+        check("silent has frames", len([x for x in rows3 if x[0] == "video" and x[1] >= 0]) >= 2,
               len(rows3))
         check("silent has no audio rows", not [r for r in rows3 if r[0] == "audio"], rows3)
 
@@ -97,7 +97,7 @@ try:
     gen_video(capmp4)
     with um.patch.object(ingest, "VIDEO_FPS", 1.0), um.patch.object(ingest, "VIDEO_MAX_FRAMES", 1):
         n4, skip4 = ingest.index_file(c, capmp4)
-        capframes = [x for x in kinds(c, capmp4) if x[0] == "image" and x[1] >= 0]
+        capframes = [x for x in kinds(c, capmp4) if x[0] == "video" and x[1] >= 0]
         check("frame cap honored", len(capframes) == 1, len(capframes))
         check("frame_cap warning on success", n4 > 0 and len(skip4) == 1
               and skip4[0]["code"] == "frame_cap", (n4, skip4))
@@ -113,13 +113,16 @@ try:
 
     # --- FTS identity is kind-scoped: a frame match never hydrates the audio row
     fts_img = store.keyword_search(c, "frame", k=10)
-    check("keyword hits for frame text are all image-kind",
-          fts_img and all(h["kind"] == "image" for h in fts_img),
+    check("keyword hits for frame text are all video-kind",
+          fts_img and all(h["kind"] == "video" for h in fts_img),
           [(h["uri"].split("/")[-1], h["kind"]) for h in fts_img])
+    vidd = store.keyword_search(c, "frame", k=10, kind="video")
+    check("kind=video filter returns frame hits", fts_img and len(vidd) >= 1 and
+          all(h["kind"] == "video" for h in vidd), [(h["kind"]) for h in vidd])
     fts_aud = store.keyword_search(c, "frame", k=10, kind="audio")
     check("kind=audio filter returns no hydrating frame hits", fts_aud == [], fts_aud)
     both = store.rrf_blend([
-        {"uri": mp4, "kind": "image", "span_start": 0.0, "span_end": 1.0,
+        {"uri": mp4, "kind": "video", "span_start": 0.0, "span_end": 1.0,
          "snippet": "frame", "score": 0.9, "thumbnail": None},
         {"uri": mp4, "kind": "audio", "span_start": 0.0, "span_end": 3.0,
          "snippet": "audio", "score": 0.8, "thumbnail": None}], [], k=5)
