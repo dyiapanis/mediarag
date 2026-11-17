@@ -1,0 +1,13 @@
+{
+  "name": "mediarag",
+  "label": "MediaRAG",
+  "description": "Search the local corpus: documents, images, audio and video frames.",
+  "icon": "Database",
+  "version": "0.1.22",
+  "tab": {
+    "path": "/mediarag",
+    "position": "after:skills"
+  },
+  "api": "plugin_api.py",
+  "entry": "dist/index.js"
+}
