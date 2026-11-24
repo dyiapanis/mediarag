@@ -1,4 +1,5 @@
 # MediaRAG
+<!-- mcp-name: io.github.dyiapanis/mediarag -->
 
 ![MediaRAG — one semantic index over documents, images and audio](assets/banner.jpg)
 
