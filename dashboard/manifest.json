@@ -3,7 +3,7 @@
   "label": "MediaRAG",
   "description": "Search the local corpus: documents, images, audio and video frames.",
   "icon": "Database",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "tab": {
     "path": "/mediarag",
     "position": "after:skills"
