@@ -69,9 +69,8 @@ def main() -> int:
     # Nothing on this machine has the stack. If uv is around, let it build and
     # cache a private environment from requirements.txt — the installer does the
     # resolution that Agent Plugins 1.0 has no field for.
-    # ponytail: plain PyPI resolution, so Linux pulls the CUDA torch build
-    # (~2.5 GB). Add `--index https://download.pytorch.org/whl/cpu` for the CPU
-    # build if that matters; see README.
+    # ponytail: the CPU torch build is wired via --extra-index-url in
+    # requirements.txt, so uv lanes resolve torch 2.15.0+cpu (~210 MB, no CUDA).
     # Opt-in only: a first run pulls ~1.7 GB, which outlives most clients'
     # handshake timeout, so the default is to fail fast and legible.
     if os.environ.get("MEDIARAG_AUTO_BOOTSTRAP") == "1" and shutil.which("uv"):
