@@ -4,6 +4,12 @@ The v1 client spawns this process per session and injects PLUGIN_ROOT/PLUGIN_DAT
 tools dispatch into the same core tool functions the native plugin toolset registers.
 Keyless except the optional Raindrop and Notion adapters, which read
 RAINDROP_API_TOKEN / NOTION_TOKEN from the environment the client injects.
+
+Dual-era MCP (spec 2026-07-28): requests carrying a modern per-request
+_meta.io.modelcontextprotocol/protocolVersion are served statelessly per that
+revision (server/discover, -32022 version rejection, resultType on results);
+requests without one get the legacy initialize handshake (<= 2025-11-25
+revisions), which is what Agent Plugins v1 hosts and current MCP clients speak.
 """
 import json
 import os
@@ -14,6 +20,9 @@ _repo_root = os.path.dirname(_server_dir)
 sys.path.insert(0, _repo_root)
 
 SERVER_INFO = {"name": "mediarag", "version": "0.1.23"}
+_MODERN = "2026-07-28"
+_LEGACY_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
+_VER_KEY = "io.modelcontextprotocol/protocolVersion"
 
 
 def _bootstrap_env() -> bool:
@@ -92,6 +101,56 @@ def _write(msg):
     sys.stdout.flush()
 
 
+def _requested_version(req):
+    meta = (req.get("params") or {}).get("_meta") or {}
+    return meta.get(_VER_KEY)
+
+
+def _reject_version(rid, ver):
+    # UnsupportedProtocolVersionError: both data fields are required by the schema.
+    _write({"jsonrpc": "2.0", "id": rid, "error": {"code": -32022,
+        "message": "Unsupported protocol version",
+        "data": {"requested": ver, "supported": [_MODERN]}}})
+
+
+def _serve(method, rid, req, schemas, handlers, modern):
+    """One request in either era; `modern` only adds the resultType/cacheScope
+    fields the 2026-07-28 schema mandates — legacy responses stay byte-identical
+    to what shipped clients already parse."""
+    era_extra = {"resultType": "complete", "cacheScope": "public", "ttlMs": 0} if modern else {}
+    if method == "initialize":
+        requested = (req.get("params") or {}).get("protocolVersion")
+        reply = requested if requested in _LEGACY_VERSIONS else "2024-11-05"
+        _write({"jsonrpc": "2.0", "id": rid, "result": {
+            "protocolVersion": reply, "capabilities": {"tools": {}},
+            "serverInfo": SERVER_INFO}})
+    elif method == "notifications/initialized":
+        pass
+    elif method == "tools/list":
+        _write({"jsonrpc": "2.0", "id": rid, "result": {"tools": schemas, **era_extra}})
+    elif method == "tools/call":
+        params = req.get("params") or {}
+        name, args = params.get("name"), params.get("arguments") or {}
+        if name not in handlers or not isinstance(args, dict):
+            _write({"jsonrpc": "2.0", "id": rid, "error": {"code": -32601,
+                "message": f"unknown tool: {name!r}"}})
+            return
+        try:
+            result = handlers[name](**args)
+            _write({"jsonrpc": "2.0", "id": rid, "result": {"content": [
+                {"type": "text", "text": result if isinstance(result, str) else json.dumps(result)}],
+                **era_extra}})
+        except Exception as e:
+            _write({"jsonrpc": "2.0", "id": rid, "result": {
+                "content": [{"type": "text", "text": f"error: {e}"}], "isError": True,
+                **era_extra}})
+    elif method == "ping":
+        _write({"jsonrpc": "2.0", "id": rid, "result": {}})
+    elif rid is not None:
+        _write({"jsonrpc": "2.0", "id": rid, "error": {
+            "code": -32601, "message": f"Method not found: {method}"}})
+
+
 def main():
     if not _bootstrap_env():
         return 1
@@ -106,33 +165,27 @@ def main():
         if req is None:
             break
         method, rid = req.get("method"), req.get("id")
-        if method == "initialize":
-            _write({"jsonrpc": "2.0", "id": rid, "result": {
-                "protocolVersion": "2024-11-05", "capabilities": {"tools": {}},
-                "serverInfo": SERVER_INFO}})
-        elif method == "notifications/initialized":
-            pass
-        elif method == "tools/list":
-            _write({"jsonrpc": "2.0", "id": rid, "result": {"tools": schemas}})
-        elif method == "tools/call":
-            params = req.get("params") or {}
-            name, args = params.get("name"), params.get("arguments") or {}
-            if name not in handlers or not isinstance(args, dict):
-                _write({"jsonrpc": "2.0", "id": rid, "error": {"code": -32601,
-                    "message": f"unknown tool: {name!r}"}})
-                continue
-            try:
-                result = handlers[name](**args)
-                _write({"jsonrpc": "2.0", "id": rid, "result": {"content": [
-                    {"type": "text", "text": result if isinstance(result, str) else json.dumps(result)}]}})
-            except Exception as e:
+        ver = _requested_version(req)
+
+        if method == "server/discover":
+            # The stdio backward-compat probe: an unversioned discover still
+            # gets answered — the result itself tells the client what we speak.
+            if ver is not None and ver != _MODERN:
+                if rid is not None:
+                    _reject_version(rid, ver)
+            elif rid is not None:
                 _write({"jsonrpc": "2.0", "id": rid, "result": {
-                    "content": [{"type": "text", "text": f"error: {e}"}], "isError": True}})
-        elif method == "ping":
-            _write({"jsonrpc": "2.0", "id": rid, "result": {}})
-        elif rid is not None:
-            _write({"jsonrpc": "2.0", "id": rid, "error": {
-                "code": -32601, "message": f"Method not found: {method}"}})
+                    "resultType": "complete", "supportedVersions": [_MODERN],
+                    "capabilities": {"tools": {}},
+                    "_meta": {"io.modelcontextprotocol/serverInfo": SERVER_INFO},
+                    "instructions": "Local multimodal corpus memory: search and "
+                                    "ingest documents, images, audio and video.",
+                    "cacheScope": "public", "ttlMs": 3600000}})
+        elif ver is not None and ver != _MODERN:
+            if rid is not None:
+                _reject_version(rid, ver)
+        else:
+            _serve(method, rid, req, schemas, handlers, modern=ver is not None)
 
 
 if __name__ == "__main__":
