@@ -1,5 +1,15 @@
 # Matches plugin.yaml python_dependencies. huggingface_hub is direct because
 # scripts/fetch_model.py imports it.
+# CPU-index extra: on Linux PyPI torch bundles the CUDA runtime (539 MB wheel +
+# a multi-GB nvidia-cu13 dependency tree). MediaRAG inference is onnxruntime on
+# CPU; the +cpu build from download.pytorch.org (~210 MB) carries no nvidia deps
+# and PEP 440 local versions (+cpu) sort above the plain PyPI build, so pip
+# prefers it. Windows resolves the same +cpu build (identical CPU content);
+# macOS CPU-index wheels are version-identical to PyPI's, so macOS is unchanged.
+# NOTE: `hermes plugins install` (PM path) reads pyproject/plugin.yaml dep
+# strings, not this file, so PM-provisioned Linux installs still get CUDA torch
+# until the PM supports index configuration.
+--extra-index-url https://download.pytorch.org/whl/cpu
 onnxruntime==1.29.0
 numpy>=2.0,<3
 pillow>=11.0,<14

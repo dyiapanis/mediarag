@@ -30,6 +30,8 @@ def from_requirements() -> dict[str, str]:
     out = {}
     for line in (ROOT / "requirements.txt").read_text().splitlines():
         line = line.split("#")[0]
+        if line.strip().startswith("-"):
+            continue  # pip options (--extra-index-url etc.) are not dependencies
         if line.strip():
             out[norm(line)[0]] = norm(line)[1]
     return out
