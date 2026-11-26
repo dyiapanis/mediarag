@@ -19,7 +19,7 @@ _server_dir = os.path.dirname(os.path.abspath(__file__))
 _repo_root = os.path.dirname(_server_dir)
 sys.path.insert(0, _repo_root)
 
-SERVER_INFO = {"name": "mediarag", "version": "0.1.23"}
+SERVER_INFO = {"name": "mediarag", "version": "0.1.24"}
 _MODERN = "2026-07-28"
 _LEGACY_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 _VER_KEY = "io.modelcontextprotocol/protocolVersion"

@@ -5,6 +5,6 @@ sources.d/
 scripts/dev/
 mediarag-config.yaml
 .venv/
-dist/
-build/
+/dist/
+/build/
 *.egg-info/

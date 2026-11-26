@@ -73,8 +73,15 @@ def version_surfaces() -> dict[str, str]:
     py_v = re.search(r'^version\s*=\s*"([^"]+)"', (ROOT / "pyproject.toml").read_text(), re.M)
     srv = (ROOT / "scripts" / "mcp_server.py").read_text()
     srv_v = re.search(r'"name":\s*"mediarag",\s*"version":\s*"([^"]+)"', srv)
+    man_v = re.search(r'"version"\s*:\s*"([^"]+)"', (ROOT / "dashboard" / "manifest.json").read_text())
+    server_json = (ROOT / "server.json").read_text()
+    reg_v = re.search(r'^\s*"version"\s*:\s*"([^"]+)"', server_json, re.M)
+    pkg_v = re.search(r'"packages"\s*:\s*\[\s*\{\s*"registry[^{]*?"version"\s*:\s*"([^"]+)"',
+                      server_json, re.S)
     out = {"plugin.yaml": yaml_v, "plugin.json": json_v,
-           "pyproject.toml": py_v, "scripts/mcp_server.py": srv_v}
+           "pyproject.toml": py_v, "scripts/mcp_server.py": srv_v,
+           "dashboard/manifest.json": man_v,
+           "server.json": reg_v, "server.json packages[]": pkg_v}
     found = {}
     for label, match in out.items():
         assert match is not None, f"version unreadable in {label}"
