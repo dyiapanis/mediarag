@@ -3,12 +3,12 @@
   "name": "io.github.dyiapanis/mediarag",
   "title": "MediaRAG",
   "description": "Local, multimodal, retrieval augmented generation across your documents, images, audio and video.",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "mediarag",
-      "version": "0.1.23",
+      "version": "0.1.24",
       "transport": {
         "type": "stdio"
       }

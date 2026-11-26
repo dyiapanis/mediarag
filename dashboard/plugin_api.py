@@ -39,14 +39,30 @@ def _root() -> str:  # pragma: no cover - exercised inside the child's tool laye
 
 @functools.lru_cache(maxsize=1)
 def _engine_python() -> str | None:
-    """Newest installs-env venv whose python can import the engine (hashes rotate)."""
-    pattern = os.path.join(os.path.expanduser("~/.hermes/installs"),
-                           "*", "environments", "*", "venv", "bin", "python")
-    cands = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
+    """Newest installs-env venv whose python can import the engine (hashes rotate).
+
+    installs/ may live under the shared Hermes home (~/.hermes) or under a
+    profile-scoped HERMES_HOME; probe whichever exist, newest first.
+    """
+    roots = []
+    try:
+        from hermes_constants import get_hermes_home
+        roots.append(os.path.join(get_hermes_home(), "installs"))
+    except ImportError:
+        pass  # standalone import (tests, editor) — expanduser root still probed
+    roots.append(os.path.join(os.path.expanduser("~/.hermes"), "installs"))
+    cands = []
+    for root in dict.fromkeys(roots):  # dedupe, keep order
+        cands += glob.glob(os.path.join(
+            root, "*", "environments", "*", "venv", "bin", "python"))
+    cands.sort(key=os.path.getmtime, reverse=True)
     for py in cands:
         try:
             r = subprocess.run(
-                [py, "-c", "import transformers, onnxruntime, numpy"],
+                # matches _engine_importable(): the processor chain needs BOTH
+                # torch and torchvision or every embed raises at call time
+                [py, "-c",
+                 "import transformers, onnxruntime, numpy, torch, torchvision"],
                 capture_output=True, timeout=120,
             )
             if r.returncode == 0:
