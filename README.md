@@ -4,7 +4,7 @@
 
 <h2 align="center">MediaRAG</h2>
 
-<p align="center"><strong>Local, multimodal retrieval augmented generation across your documents, images, audio and video</strong></p>
+<p align="center"><strong>Local, multimodal retrieval augmented generation across your documents and media.</strong></p>
 
 <p align="center">
   <a href="https://github.com/dyiapanis/mediarag/actions/workflows/tests.yml"><img src="https://github.com/dyiapanis/mediarag/actions/workflows/tests.yml/badge.svg" alt="tests" valign="middle"></a>&nbsp;
@@ -17,9 +17,7 @@
 
 ---
 
-It indexes documents (pdf, office files, notes, html) and media (images, audio,
-subtitles, video) into one local SQLite corpus, and you search both by meaning
-from any MCP-capable agent. Video files are indexed natively: frames sampled at
+MediaRAG indexes documents (pdf, office files, notes, html) and media (images, audio, video) into a local SQLite corpus and offers semantic search from any MCP-capable agent. Video files are indexed natively: frames sampled at
 0.5 fps (each frame carries its timestamp and a thumbnail — picture content is
 searchable) plus the full audio track (spoken content, 11.2 s windows), so
 "which file mentions the landing", "where did I talk about it", and "find the
