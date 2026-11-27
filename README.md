@@ -1,11 +1,21 @@
-# MediaRAG
 <!-- mcp-name: io.github.dyiapanis/mediarag -->
 
-![MediaRAG — one semantic index over documents, images and audio](assets/banner.jpg)
+![MediaRAG — one semantic index over documents, images, audio and video](assets/banner.jpg)
 
-Local multimodal semantic search over documents and media, packaged as an
-agent-plugin per the [agent-plugins.org](https://agent-plugins.org/) 1.0
-standard.
+<h2 align="center">MediaRAG</h2>
+
+<p align="center"><strong>Local, multimodal retrieval augmented generation across your documents, images, audio and video</strong></p>
+
+<p align="center">
+  <a href="https://github.com/dyiapanis/mediarag/actions/workflows/tests.yml"><img src="https://github.com/dyiapanis/mediarag/actions/workflows/tests.yml/badge.svg" alt="tests" valign="middle"></a>&nbsp;
+  <a href="https://github.com/dyiapanis/mediarag/blob/main/LICENSE"><img src="https://img.shields.io/github/license/dyiapanis/mediarag" alt="license" valign="middle"></a>&nbsp;
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="python" valign="middle"></a>&nbsp;
+  <a href="https://github.com/dyiapanis/mediarag/actions/workflows/tests.yml"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20Windows-informational" alt="platforms" valign="middle"></a>&nbsp;
+  <a href="https://agent-plugins.org/"><img src="https://img.shields.io/badge/agent--plugins-1.0%20compatible-8A2BE2" alt="agent plugins" valign="middle"></a>&nbsp;
+  <a href="https://hermes-agent.nousresearch.com/marketplace/mediarag"><img src="https://img.shields.io/badge/hermes-plugin%20marketplace-8A2BE2" alt="hermes" valign="middle"></a>
+</p>
+
+---
 
 It indexes documents (pdf, office files, notes, html) and media (images, audio,
 subtitles, video) into one local SQLite corpus, and you search both by meaning
